@@ -1,0 +1,27 @@
+[project]
+name = "sifts"
+description = "Simple full-text search library with SQL backend"
+authors = [
+  { name = "David M. Straub", email = "straub@protonmail.com" },
+]
+license = { text = "MIT" }
+readme = "README.md"
+dynamic = ["version"]
+dependencies = ["SQLAlchemy"]
+
+[project.urls]
+homepage = "https://github.com/DavidMStraub/sifts"
+repository = "https://github.com/DavidMStraub/sifts"
+
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "black"
+
+[tool.setuptools_scm]
+# NOTE: Using a version file avoids some overhead
+#
+# This file is explicitly ignored by version control.
+write_to = "src/sifts/_version.py"
