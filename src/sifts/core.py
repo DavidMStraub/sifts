@@ -9,7 +9,8 @@ def make_id():
 
 
 class SearchEngineSQLite:
-    def __init__(self, db_path="search_engine.db") -> None:
+    def __init__(self, db_path="search_engine.db", prefix: str | None = None) -> None:
+        self.prefix = prefix
         self.con = sqlite3.connect(db_path)
         self.create_tables()
 
@@ -22,6 +23,7 @@ class SearchEngineSQLite:
                 """CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
                     content TEXT,
+                    prefix TEXT,
                     metadata JSON
                 )"""
             )
@@ -40,10 +42,11 @@ class SearchEngineSQLite:
             metadatas = [None for _ in contents]
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
+        prefixes = [self.prefix for _ in contents]
         with self.con:
             self.con.executemany(
-                "INSERT INTO documents (content, id, metadata) VALUES (?, ?, ?)",
-                list(zip(contents, ids, metadatas)),
+                "INSERT INTO documents (content, id, metadata, prefix) VALUES (?, ?, ?, ?)",
+                list(zip(contents, ids, metadatas, prefixes)),
             )
             self.con.executemany(
                 "INSERT INTO documents_fts (content, id) VALUES (?, ?)",
@@ -96,7 +99,13 @@ class SearchEngineSQLite:
             try:
                 fts_query = """SELECT doc.id, fts.rank FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
-                WHERE fts.content MATCH (?)"""
+                WHERE fts.content MATCH (?)
+                """
+                if self.prefix is None:
+                    fts_query += " AND prefix IS NULL"
+                else:
+                    fts_query += f" AND prefix = '{self.prefix}'"
+
                 params = [query_string]
 
                 if where:
@@ -105,7 +114,7 @@ class SearchEngineSQLite:
                         params.append(value)
 
                 if limit:
-                    fts_query += "LIMIT (?)"
+                    fts_query += " LIMIT (?)"
 
                 if order_by:
                     fts_query += f' ORDER BY json_extract(doc.metadata, "$.{order_by}")'
