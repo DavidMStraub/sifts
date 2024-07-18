@@ -36,6 +36,18 @@ def test_add(tmp_path):
     assert len(search.query("Lorem OR amet")) == 2
 
 
+def test_add_prefix(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path, prefix="my_prefix")
+    assert search.query("Lorem") == []
+    search.add(["Lorem ipsum dolor"])
+    assert len(search.query("Lorem")) == 1
+    search = SearchEngineSQLite(path)
+    assert len(search.query("Lorem")) == 0
+    search = SearchEngineSQLite(path, prefix="my_prefix")
+    assert len(search.query("Lorem")) == 1
+
+
 def test_add_id(tmp_path):
     path = tmp_path / "search_engine.db"
     search = SearchEngineSQLite(path)
