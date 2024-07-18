@@ -27,6 +27,7 @@ class SearchEngineSQLite:
                     metadata JSON
                 )"""
             )
+            self.con.execute("CREATE INDEX prefix_idx ON documents (prefix)")
 
     def add(
         self,
