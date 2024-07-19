@@ -200,9 +200,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
         "INSERT INTO documents (content, id, metadata, prefix) VALUES (%s, %s, %s, %s)"
     )
 
-    QUERY_UPDATE_INDEX = (
-        "UPDATE documents SET content = %s, tsvector = to_tsvector(%s) WHERE id = %s"
-    )
+    QUERY_UPDATE_INDEX = "UPDATE documents SET content = %s, tsvector = to_tsvector('simple', %s) WHERE id = %s"
     QUERY_UPDATE_DOC = "UPDATE documents SET metadata = %s WHERE id = %s"
 
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
@@ -210,7 +208,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
 
     QUERY_SEARCH = """
     SELECT id, ts_rank(tsvector, query) AS rank
-    FROM documents, to_tsquery(%s) query
+    FROM documents, to_tsquery('simple', %s) query
     WHERE tsvector @@ query
     """
 

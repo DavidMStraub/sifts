@@ -102,10 +102,17 @@ def test_add(postgres_service, search_engine):
 def test_query_wildcard(postgres_service, search_engine):
     assert search_engine.query("Lorem") == []
     ids1 = search_engine.add(["Lorem ipsum dolor"])
-    ids2 = search_engine.add(["sit superamet"])
-    assert len(search_engine.query("super:*")) == 1
-    assert search_engine.query("super:*")[0][0] == ids2[0]
-    # assert len(search_engine.query("Lorem | amet")) == 2
+    ids2 = search_engine.add(["sit amet"])
+    assert len(search_engine.query("am:*")) == 1
+    assert search_engine.query("am:*")[0][0] == ids2[0]
+    assert len(search_engine.query("ame:*")) == 1
+
+
+def test_query_pr(postgres_service, search_engine):
+    assert search_engine.query("Lorem") == []
+    ids1 = search_engine.add(["Lorem ipsum dolor"])
+    ids2 = search_engine.add(["sit amet"])
+    assert len(search_engine.query("Lorem | amet")) == 2
 
 
 def test_add_prefix(postgres_service, search_engine, search_engine_prefix):
