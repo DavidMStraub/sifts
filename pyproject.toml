@@ -9,6 +9,9 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = ["SQLAlchemy", "psycopg2"]
 
+[project.optional-dependencies]
+testing = ["pytest", "pytest-postgresql"]
+
 [project.urls]
 homepage = "https://github.com/DavidMStraub/sifts"
 repository = "https://github.com/DavidMStraub/sifts"
