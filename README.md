@@ -25,7 +25,7 @@ results = search.query(
     "Lorem",
     # limit=2,  # optionally limit the number of results
     # where={"foo": "bar"},  # optional filter
-    # order_by="foor",  # sort by metadata key (rather than rank)
+    # order_by="foo",  # sort by metadata key (rather than rank)
 )
 ```
 

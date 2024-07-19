@@ -248,6 +248,8 @@ def db_url_to_dsn(db_url: str) -> str:
 
 def SearchEngine(db_url: str, prefix: str | None = None) -> SearchEngineBase:
     """Constructor for search engine instance."""
+    if not db_url:
+        return SearchEngineSQLite(prefix=prefix)
     if db_url.startswith("sqlite:///"):
         return SearchEngineSQLite(db_path=db_url[10:], prefix=prefix)
     return SearchEnginePostgreSQL(dsn=db_url_to_dsn(db_url))
