@@ -6,6 +6,12 @@ It is meant to be used with Python libraries that need full-text search support,
 
 It supports both **SQLite** FTS5 and **PostgreSQL** FTS as backends.
 
+## Installation
+
+```bash
+pip install sifts
+```
+
 ## Usage
 
 ```python
