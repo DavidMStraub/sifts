@@ -36,3 +36,15 @@ results = search.query(
 ```
 
 The API is inspired by [chroma](https://github.com/chroma-core/chroma).
+
+## Search Syntax
+
+Sifts supports the following search syntax:
+
+- Search for individual words
+- Search for multiple words (will match documents where all words are present)
+- `and` operator
+- `or` operator
+- `*` wildcard (in SQLite, supported anywhere in the search term, in PostgreSQL only at the end of the search term)
+
+The search syntax is the same regardless of backend.

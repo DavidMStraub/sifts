@@ -33,7 +33,17 @@ def test_add(tmp_path):
     assert search.query("Lorem")[0][0] == ids1[0]
     assert len(search.query("am*")) == 1
     assert search.query("am*")[0][0] == ids2[0]
-    assert len(search.query("Lorem OR amet")) == 2
+    assert len(search.query("Lorem or amet")) == 2
+
+
+def test_query_multiple(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path)
+    search.add(["Lorem ipsum dolor"])
+    search.add(["sit amet"])
+    assert len(search.query("Lorem ipsum")) == 1
+    assert len(search.query("sit amet")) == 1
+    assert len(search.query("Lorem sit")) == 0
 
 
 def test_add_prefix(tmp_path):

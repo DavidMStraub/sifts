@@ -1,15 +1,61 @@
+"""Core classes for Sifts."""
+
 from __future__ import annotations
 import json
+import re
 import sqlite3
 import uuid
+
 import psycopg2
 from urllib.parse import urlparse
 from contextlib import contextmanager
-from psycopg2.extras import Json
 
 
 def make_id():
     return str(uuid.uuid4())
+
+
+class QueryParser:
+    """Parser for search queries."""
+
+    def __init__(self, query: str, backend: str = "sqlite") -> None:
+        """Initialize given a query."""
+        self.query = query.strip()
+        self.backend = backend
+
+    def _to_sqlite(self) -> str:
+        query = self.query
+        query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
+        query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
+        return query
+
+    def _to_pg(self) -> str:
+        query = self.query
+
+        operators = {"&", "|", "and", "or"}
+        words = query.split()
+        query_list = []
+        i = 0
+        while i < len(words):
+            if words[i] in operators:
+                query_list.append(words[i])
+                i += 1
+            else:
+                query_list.append(words[i])
+                if i + 1 < len(words) and words[i + 1] not in operators:
+                    query_list.append("&")
+                i += 1
+        query = " ".join(query_list)
+        query = re.sub(r"\band\b", "&", query, flags=re.IGNORECASE)
+        query = re.sub(r"\bor\b", "|", query, flags=re.IGNORECASE)
+        query = re.sub(r"\b(\w+)\*(?=\s|$|[^\w])", r"\1:*", query)
+        return query
+
+    def __str__(self) -> str:
+        """Return the right string representation for the backend."""
+        if self.backend == "sqlite":
+            return self._to_sqlite()
+        return self._to_pg()
 
 
 class SearchEngineBase:
@@ -112,6 +158,8 @@ class SearchEngineBase:
                 else:
                     fts_query += f" AND prefix = '{self.prefix}'"
 
+                backend = "postgresql" if self.IS_POSTGRES else "sqlite"
+                query_string = str(QueryParser(query_string, backend=backend))
                 params = [query_string]
 
                 if where:

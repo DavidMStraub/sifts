@@ -103,16 +103,16 @@ def test_query_wildcard(postgres_service, search_engine):
     assert search_engine.query("Lorem") == []
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
-    assert len(search_engine.query("am:*")) == 1
-    assert search_engine.query("am:*")[0][0] == ids2[0]
-    assert len(search_engine.query("ame:*")) == 1
+    assert len(search_engine.query("am*")) == 1
+    assert search_engine.query("am*")[0][0] == ids2[0]
+    assert len(search_engine.query("ame*")) == 1
 
 
 def test_query_pr(postgres_service, search_engine):
     assert search_engine.query("Lorem") == []
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
-    assert len(search_engine.query("Lorem | amet")) == 2
+    assert len(search_engine.query("Lorem or amet")) == 2
 
 
 def test_add_prefix(postgres_service, search_engine, search_engine_prefix):
@@ -157,3 +157,11 @@ def test_delete(postgres_service, search_engine):
     res = search_engine.query("Lorem")
     assert len(res) == 0
     search_engine.delete(ids)
+
+
+def test_query_multiple(postgres_service, search_engine):
+    search_engine.add(["Lorem ipsum dolor"])
+    search_engine.add(["sit amet"])
+    assert len(search_engine.query("Lorem ipsum")) == 1
+    assert len(search_engine.query("sit amet")) == 1
+    assert len(search_engine.query("Lorem sit")) == 0
