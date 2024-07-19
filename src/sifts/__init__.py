@@ -15,3 +15,5 @@ __all__ = (
     "__version__",
     "__version_tuple__",
 )
+
+from .core import SearchEngine
