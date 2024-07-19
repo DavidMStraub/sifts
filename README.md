@@ -15,7 +15,7 @@ import sifts
 search = sifts.SearchEngine()
 
 # Add docs to the index. Can also update and delete.
-collection.add(
+search.add(
     documents=["Lorem ipsum dolor", "sit amet"],
     metadatas=[{"foo": "bar"}, {"foo": "baz"}], # otpional, can filter on these
     ids=["doc1", "doc2"], # unique for each doc. Uses UUIDs if omitted
