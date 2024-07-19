@@ -14,6 +14,7 @@ def make_id():
 
 class SearchEngineBase:
 
+    IS_POSTGRES = False
     QUERY_CREATE_INDEX = ""
     QUERY_CREATE_DOCUMENT = ""
     QUERY_INSERT_DOC = ""
@@ -60,7 +61,10 @@ class SearchEngineBase:
             conn.executemany(
                 self.QUERY_INSERT_DOC, list(zip(contents, ids, metadatas, prefixes))
             )
-            conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
+            if self.IS_POSTGRES:
+                conn.executemany(self.QUERY_INSERT_INDEX, [(did,) for did in ids])
+            else:
+                conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
         return ids
 
     def update(
@@ -74,7 +78,12 @@ class SearchEngineBase:
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
         with self.conn() as conn:
-            conn.executemany(self.QUERY_UPDATE_INDEX, list(zip(contents, ids)))
+            if self.IS_POSTGRES:
+                conn.executemany(
+                    self.QUERY_UPDATE_INDEX, list(zip(contents, contents, ids))
+                )
+            else:
+                conn.executemany(self.QUERY_UPDATE_INDEX, list(zip(contents, ids)))
             if metadatas and any(metadatas):
                 metadatas = [json.dumps(m) if m else None for m in metadatas]
                 conn.executemany(
@@ -117,7 +126,9 @@ class SearchEngineBase:
                     fts_query += " ORDER BY " + self.QUERY_ORDER_META.format(order_by)
                     if descending:
                         fts_query += " DESC"
-                result = conn.execute(fts_query, params)
+                result = conn.execute(fts_query, params) or []
+                if self.IS_POSTGRES:
+                    result = conn.fetchall()
                 matching_ids = [match for match in result]
             except sqlite3.OperationalError:
                 return []
@@ -167,6 +178,7 @@ class SearchEngineSQLite(SearchEngineBase):
 
 class SearchEnginePostgreSQL(SearchEngineBase):
 
+    IS_POSTGRES = True
     QUERY_CREATE_INDEX = """
         CREATE TABLE IF NOT EXISTS documents (
             id UUID PRIMARY KEY,

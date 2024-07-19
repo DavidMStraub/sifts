@@ -7,7 +7,7 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 dynamic = ["version"]
-dependencies = ["SQLAlchemy"]
+dependencies = ["SQLAlchemy", "psycopg2"]
 
 [project.urls]
 homepage = "https://github.com/DavidMStraub/sifts"
