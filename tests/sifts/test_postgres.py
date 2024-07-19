@@ -96,7 +96,7 @@ def test_add(postgres_service, search_engine):
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
     assert len(search_engine.query("Lorem")) == 1
-    assert search_engine.query("Lorem")[0][0] == ids1[0]
+    assert search_engine.query("Lorem")[0]["id"] == ids1[0]
 
 
 def test_query_wildcard(postgres_service, search_engine):
@@ -104,7 +104,7 @@ def test_query_wildcard(postgres_service, search_engine):
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
     assert len(search_engine.query("am*")) == 1
-    assert search_engine.query("am*")[0][0] == ids2[0]
+    assert search_engine.query("am*")[0]["id"] == ids2[0]
     assert len(search_engine.query("ame*")) == 1
 
 
@@ -130,7 +130,7 @@ def test_add_id(postgres_service, search_engine):
     assert ids == ["my_id"]
     res = search_engine.query("y")
     assert len(res) == 1
-    assert res[0][0] == "my_id"
+    assert res[0]["id"] == "my_id"
     with pytest.raises(psycopg2.errors.UniqueViolation):
         # ID must be unique
         search_engine.add(["z"], ids=["my_id"])
@@ -140,13 +140,13 @@ def test_update(postgres_service, search_engine):
     ids = search_engine.add(["Lorem ipsum"])
     res = search_engine.query("Lorem")
     assert len(res) == 1
-    assert res[0][0] == ids[0]
+    assert res[0]["id"] == ids[0]
     search_engine.update(ids=ids, contents=["dolor sit"])
     res = search_engine.query("Lorem")
     assert len(res) == 0
     res = search_engine.query("sit")
     assert len(res) == 1
-    assert res[0][0] == ids[0]
+    assert res[0]["id"] == ids[0]
 
 
 def test_delete(postgres_service, search_engine):

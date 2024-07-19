@@ -30,9 +30,9 @@ def test_add(tmp_path):
     ids1 = search.add(["Lorem ipsum dolor"])
     ids2 = search.add(["sit amet"])
     assert len(search.query("Lorem")) == 1
-    assert search.query("Lorem")[0][0] == ids1[0]
+    assert search.query("Lorem")[0]["id"] == ids1[0]
     assert len(search.query("am*")) == 1
-    assert search.query("am*")[0][0] == ids2[0]
+    assert search.query("am*")[0]["id"] == ids2[0]
     assert len(search.query("Lorem or amet")) == 2
 
 
@@ -68,7 +68,7 @@ def test_add_id(tmp_path):
     assert ids == ["my_id"]
     res = search.query("y")
     assert len(res) == 1
-    assert res[0][0] == "my_id"
+    assert res[0]["id"] == "my_id"
     with pytest.raises(sqlite3.IntegrityError):
         # ID must be unique
         search.add(["z"], ids=["my_id"])
@@ -80,13 +80,13 @@ def test_update(tmp_path):
     ids = search.add(["Lorem ipsum"])
     res = search.query("Lorem")
     assert len(res) == 1
-    assert res[0][0] == ids[0]
+    assert res[0]["id"] == ids[0]
     search.update(ids=ids, contents=["dolor sit"])
     res = search.query("Lorem")
     assert len(res) == 0
     res = search.query("sit")
     assert len(res) == 1
-    assert res[0][0] == ids[0]
+    assert res[0]["id"] == ids[0]
 
 
 def test_delete(tmp_path):
@@ -99,3 +99,16 @@ def test_delete(tmp_path):
     res = search.query("Lorem")
     assert len(res) == 0
     search.delete(ids)
+
+
+def test_query_metadata(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path)
+    search.add(["Lorem ipsum dolor"], metadatas=[{"foo": "bar"}])
+    search.add(["sit amet"])
+    res = search.query("Lorem")
+    assert len(res) == 1
+    assert res[0]["metadata"] == {"foo": "bar"}
+    res = search.query("sit")
+    assert len(res) == 1
+    assert res[0]["metadata"] is None

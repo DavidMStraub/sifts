@@ -177,10 +177,18 @@ class SearchEngineBase:
                 result = conn.execute(fts_query, params) or []
                 if self.IS_POSTGRES:
                     result = conn.fetchall()
-                matching_ids = [match for match in result]
-            except sqlite3.OperationalError:
+                result = [
+                    {
+                        "id": match[0],
+                        "rank": match[1],
+                        "content": match[2],
+                        "metadata": json.loads(match[3] or "null"),
+                    }
+                    for match in result
+                ]
+            except (sqlite3.OperationalError, psycopg2.OperationalError):
                 return []
-        return matching_ids
+        return result
 
 
 class SearchEngineSQLite(SearchEngineBase):
@@ -202,7 +210,8 @@ class SearchEngineSQLite(SearchEngineBase):
     QUERY_UPDATE_DOC = "UPDATE documents SET metadata = (?) WHERE id = (?)"
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
-    QUERY_SEARCH = """SELECT doc.id, fts.rank FROM documents_fts fts
+    QUERY_SEARCH = """SELECT doc.id, fts.rank, doc.content, doc.metadata
+                FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
                 WHERE fts.content MATCH (?)
                 """
@@ -255,7 +264,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = %s"
 
     QUERY_SEARCH = """
-    SELECT id, ts_rank(tsvector, query) AS rank
+    SELECT id, ts_rank(tsvector, query) AS rank, content, metadata
     FROM documents, to_tsquery('simple', %s) query
     WHERE tsvector @@ query
     """
