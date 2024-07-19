@@ -181,7 +181,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     IS_POSTGRES = True
     QUERY_CREATE_INDEX = """
         CREATE TABLE IF NOT EXISTS documents (
-            id UUID PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             content TEXT,
             prefix TEXT,
             metadata JSONB,
@@ -194,13 +194,15 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_CREATE_DOCUMENT = ""
 
     QUERY_INSERT_INDEX = (
-        "UPDATE documents SET tsvector = to_tsvector('english', content) WHERE id = %s"
+        "UPDATE documents SET tsvector = to_tsvector(content) WHERE id = %s"
     )
     QUERY_INSERT_DOC = (
         "INSERT INTO documents (content, id, metadata, prefix) VALUES (%s, %s, %s, %s)"
     )
 
-    QUERY_UPDATE_INDEX = "UPDATE documents SET content = %s, tsvector = to_tsvector('english', %s) WHERE id = %s"
+    QUERY_UPDATE_INDEX = (
+        "UPDATE documents SET content = %s, tsvector = to_tsvector(%s) WHERE id = %s"
+    )
     QUERY_UPDATE_DOC = "UPDATE documents SET metadata = %s WHERE id = %s"
 
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
@@ -208,7 +210,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
 
     QUERY_SEARCH = """
     SELECT id, ts_rank(tsvector, query) AS rank
-    FROM documents, to_tsquery('english', %s) query
+    FROM documents, to_tsquery(%s) query
     WHERE tsvector @@ query
     """
 

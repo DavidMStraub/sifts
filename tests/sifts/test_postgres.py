@@ -53,6 +53,14 @@ def search_engine():
         conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")
 
 
+@pytest.fixture
+def search_engine_prefix():
+    engine = SearchEnginePostgreSQL(dsn=TEST_DB_DSN, prefix="my_prefix")
+    yield engine
+    with engine.conn() as conn:
+        conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")
+
+
 def test_add_document(postgres_service, search_engine):
     content = ["test content"]
     ids = search_engine.add(content)
@@ -81,3 +89,64 @@ def test_delete_document(postgres_service, search_engine):
     search_engine.delete(ids)
     results = search_engine.query("delete")
     assert len(results) == 0
+
+
+def test_add(postgres_service, search_engine):
+    assert search_engine.query("Lorem") == []
+    ids1 = search_engine.add(["Lorem ipsum dolor"])
+    ids2 = search_engine.add(["sit amet"])
+    assert len(search_engine.query("Lorem")) == 1
+    assert search_engine.query("Lorem")[0][0] == ids1[0]
+
+
+def test_query_wildcard(postgres_service, search_engine):
+    assert search_engine.query("Lorem") == []
+    ids1 = search_engine.add(["Lorem ipsum dolor"])
+    ids2 = search_engine.add(["sit superamet"])
+    assert len(search_engine.query("super:*")) == 1
+    assert search_engine.query("super:*")[0][0] == ids2[0]
+    # assert len(search_engine.query("Lorem | amet")) == 2
+
+
+def test_add_prefix(postgres_service, search_engine, search_engine_prefix):
+    assert search_engine_prefix.query("Lorem") == []
+    search_engine_prefix.add(["Lorem ipsum dolor"])
+    assert len(search_engine_prefix.query("Lorem")) == 1
+    assert len(search_engine.query("Lorem")) == 0
+
+
+def test_add_id(postgres_service, search_engine):
+    ids = search_engine.add(["x"])
+    assert len(ids) == 1
+    assert len(ids[0]) == 36  # is UUIDv4
+    ids = search_engine.add(["y"], ids=["my_id"])
+    assert ids == ["my_id"]
+    res = search_engine.query("y")
+    assert len(res) == 1
+    assert res[0][0] == "my_id"
+    with pytest.raises(psycopg2.errors.UniqueViolation):
+        # ID must be unique
+        search_engine.add(["z"], ids=["my_id"])
+
+
+def test_update(postgres_service, search_engine):
+    ids = search_engine.add(["Lorem ipsum"])
+    res = search_engine.query("Lorem")
+    assert len(res) == 1
+    assert res[0][0] == ids[0]
+    search_engine.update(ids=ids, contents=["dolor sit"])
+    res = search_engine.query("Lorem")
+    assert len(res) == 0
+    res = search_engine.query("sit")
+    assert len(res) == 1
+    assert res[0][0] == ids[0]
+
+
+def test_delete(postgres_service, search_engine):
+    ids = search_engine.add(["Lorem ipsum"])
+    res = search_engine.query("Lorem")
+    assert len(res) == 1
+    search_engine.delete(ids)
+    res = search_engine.query("Lorem")
+    assert len(res) == 0
+    search_engine.delete(ids)
