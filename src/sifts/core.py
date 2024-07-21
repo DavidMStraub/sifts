@@ -71,6 +71,8 @@ class SearchEngineBase:
     QUERY_SEARCH = ""
     QUERY_FILTER_META = ""
     QUERY_ORDER_META = ""
+    QUERY_LIMIT = ""
+    QUERY_OFFSET = ""
 
     def __init__(self, prefix: str | None = None) -> None:
         self.prefix = prefix
@@ -178,26 +180,33 @@ class SearchEngineBase:
                             descending = False
                         fts_query += self.QUERY_ORDER_META.format(field.lstrip("+-"))
                         if descending:
-                            fts_query += " DESC"
+                            fts_query += " DESC NULLS FIRST"
+                        else:
+                            fts_query += " ASC NULLS LAST"
                         fts_query += ","
                     fts_query = fts_query.rstrip(",")  # remove last trailing comma
 
                 if limit:
-                    fts_query += " LIMIT (?)"
+                    fts_query += self.QUERY_LIMIT
                     params.append(int(limit))
                 if offset:
-                    fts_query += " OFFSET (?)"
+                    fts_query += self.QUERY_OFFSET
                     params.append(int(offset))
 
                 result = conn.execute(fts_query, params) or []
                 if self.IS_POSTGRES:
                     result = conn.fetchall()
+
                 result = [
                     {
                         "id": match[0],
                         "rank": match[1],
                         "content": match[2],
-                        "metadata": json.loads(match[3] or "null"),
+                        "metadata": (
+                            match[3]
+                            if self.IS_POSTGRES
+                            else json.loads(match[3] or "null")
+                        ),
                     }
                     for match in result
                 ]
@@ -232,6 +241,8 @@ class SearchEngineSQLite(SearchEngineBase):
                 """
     QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") = (?)'
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
+    QUERY_LIMIT = " LIMIT (?)"
+    QUERY_OFFSET = " OFFSET (?)"
 
     def __init__(self, db_path="search_engine.db", prefix: str | None = None) -> None:
         self.db_path = db_path
@@ -284,8 +295,10 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     WHERE tsvector @@ query
     """
 
-    QUERY_FILTER_META = "metadata->>%s = %s"
-    QUERY_ORDER_META = "metadata->>%s"
+    QUERY_FILTER_META = "metadata->>'{}' = %s"
+    QUERY_ORDER_META = "metadata->>'{}'"
+    QUERY_LIMIT = " LIMIT %s"
+    QUERY_OFFSET = " OFFSET %s"
 
     def __init__(
         self,
