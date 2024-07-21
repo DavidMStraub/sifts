@@ -93,7 +93,7 @@ class SearchEngineBase:
         contents: list[str],
         ids: list[str | None] | None = None,
         metadatas: list[dict[str, str] | None] | None = None,
-    ) -> int:
+    ) -> list[str]:
         if ids is None:
             ids = [make_id() for _ in contents]
         else:
