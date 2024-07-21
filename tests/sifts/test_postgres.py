@@ -81,6 +81,8 @@ def test_update_document(postgres_service, search_engine):
     search_engine.update(ids, updated_content)
     results = search_engine.query("updated")
     assert len(results) == 1
+    results = search_engine.query("content")
+    assert len(results) == 1
 
 
 def test_delete_document(postgres_service, search_engine):
@@ -131,9 +133,12 @@ def test_add_id(postgres_service, search_engine):
     res = search_engine.query("y")
     assert len(res) == 1
     assert res[0]["id"] == "my_id"
-    with pytest.raises(psycopg2.errors.UniqueViolation):
-        # ID must be unique
-        search_engine.add(["z"], ids=["my_id"])
+    # does not raise, but updates
+    search_engine.add(["z"], ids=["my_id"])
+    res = search_engine.query("y")
+    assert len(res) == 0
+    res = search_engine.query("z")
+    assert len(res) == 1
 
 
 def test_update(postgres_service, search_engine):

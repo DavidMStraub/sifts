@@ -69,9 +69,12 @@ def test_add_id(tmp_path):
     res = search.query("y")
     assert len(res) == 1
     assert res[0]["id"] == "my_id"
-    with pytest.raises(sqlite3.IntegrityError):
-        # ID must be unique
-        search.add(["z"], ids=["my_id"])
+    # does not raise, but updates
+    search.add(["z"], ids=["my_id"])
+    res = search.query("y")
+    assert len(res) == 0
+    res = search.query("z")
+    assert len(res) == 1
 
 
 def test_update(tmp_path):

@@ -65,8 +65,6 @@ class SearchEngineBase:
     QUERY_CREATE_DOCUMENT = ""
     QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
-    QUERY_UPDATE_DOC = ""
-    QUERY_UPDATE_INDEX = ""
     QUERY_DELETE = ""
     QUERY_SEARCH = ""
     QUERY_FILTER_META = ""
@@ -112,6 +110,7 @@ class SearchEngineBase:
             if self.IS_POSTGRES:
                 conn.executemany(self.QUERY_INSERT_INDEX, [(did,) for did in ids])
             else:
+                conn.executemany(self.QUERY_DELETE_INDEX, (ids,))
                 conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
         return ids
 
@@ -120,24 +119,10 @@ class SearchEngineBase:
         ids: list[str],
         contents: list[str],
         metadatas: list[dict[str, str] | None] | None = None,
-    ) -> None:
-        if metadatas is None:
-            metadatas = [None for _ in contents]
-        else:
-            metadatas = [json.dumps(m) if m else None for m in metadatas]
-        with self.conn() as conn:
-            if self.IS_POSTGRES:
-                conn.executemany(
-                    self.QUERY_UPDATE_INDEX, list(zip(contents, contents, ids))
-                )
-            else:
-                conn.executemany(self.QUERY_UPDATE_INDEX, list(zip(contents, ids)))
-            if metadatas and any(metadatas):
-                metadatas = [json.dumps(m) if m else None for m in metadatas]
-                conn.executemany(
-                    self.QUERY_UPDATE_DOC,
-                    list(zip(metadatas, ids)),
-                )
+    ) -> list[str]:
+        if ids is None or any([i is None for i in ids]):
+            raise ValueError("ids must be specified for update")
+        return self.add(contents=contents, ids=ids, metadatas=metadatas)
 
     def delete(self, ids: list[str]) -> None:
         with self.conn() as conn:
@@ -227,11 +212,13 @@ class SearchEngineSQLite(SearchEngineBase):
             metadata JSON
         )"""
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
-    QUERY_INSERT_DOC = (
-        "INSERT INTO documents (content, id, metadata, prefix) VALUES (?, ?, ?, ?)"
-    )
-    QUERY_UPDATE_INDEX = "UPDATE documents_fts SET content = (?) WHERE id = (?)"
-    QUERY_UPDATE_DOC = "UPDATE documents SET metadata = (?) WHERE id = (?)"
+    QUERY_INSERT_DOC = """INSERT INTO documents
+            (content, id, metadata, prefix) VALUES (?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                content = excluded.content,
+                metadata = excluded.metadata,
+                prefix = excluded.prefix
+            """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
     QUERY_SEARCH = """SELECT doc.id, fts.rank, doc.content, doc.metadata
@@ -277,14 +264,15 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_CREATE_DOCUMENT = ""
 
     QUERY_INSERT_INDEX = (
-        "UPDATE documents SET tsvector = to_tsvector(content) WHERE id = %s"
+        "UPDATE documents SET tsvector = to_tsvector('simple', content) WHERE id = %s"
     )
-    QUERY_INSERT_DOC = (
-        "INSERT INTO documents (content, id, metadata, prefix) VALUES (%s, %s, %s, %s)"
-    )
-
-    QUERY_UPDATE_INDEX = "UPDATE documents SET content = %s, tsvector = to_tsvector('simple', %s) WHERE id = %s"
-    QUERY_UPDATE_DOC = "UPDATE documents SET metadata = %s WHERE id = %s"
+    QUERY_INSERT_DOC = """INSERT INTO documents
+        (content, id, metadata, prefix) VALUES (%s, %s, %s, %s)
+        ON CONFLICT(id) DO UPDATE SET
+            content = EXCLUDED.content,
+            metadata = EXCLUDED.metadata,
+            prefix = EXCLUDED.prefix
+    """
 
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = %s"
