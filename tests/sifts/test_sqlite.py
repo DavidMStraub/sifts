@@ -95,9 +95,9 @@ def test_update(tmp_path):
 def test_delete(tmp_path):
     path = tmp_path / "search_engine.db"
     search = SearchEngineSQLite(path)
-    ids = search.add(["Lorem ipsum"])
+    ids = search.add(["Lorem ipsum", "Lorem dolor"])
     res = search.query("Lorem")
-    assert len(res) == 1
+    assert len(res) == 2
     search.delete(ids)
     res = search.query("Lorem")
     assert len(res) == 0

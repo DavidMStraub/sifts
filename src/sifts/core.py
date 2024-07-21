@@ -110,7 +110,7 @@ class SearchEngineBase:
             if self.IS_POSTGRES:
                 conn.executemany(self.QUERY_INSERT_INDEX, [(did,) for did in ids])
             else:
-                conn.executemany(self.QUERY_DELETE_INDEX, (ids,))
+                conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in ids])
                 conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
         return ids
 
@@ -126,8 +126,8 @@ class SearchEngineBase:
 
     def delete(self, ids: list[str]) -> None:
         with self.conn() as conn:
-            conn.executemany(self.QUERY_DELETE_INDEX, (ids,))
-            conn.executemany(self.QUERY_DELETE_DOC, (ids,))
+            conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in ids])
+            conn.executemany(self.QUERY_DELETE_DOC, [(did,) for did in ids])
 
     def query(
         self,
