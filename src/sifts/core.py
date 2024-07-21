@@ -146,9 +146,9 @@ class SearchEngineBase:
         self,
         query_string: str,
         limit: int = 0,
+        offset: int = 0,
         where: dict | None = None,
         order_by: str | None = None,
-        descending: bool = False,
     ) -> list:
         with self.conn() as conn:
             try:
@@ -167,13 +167,28 @@ class SearchEngineBase:
                         fts_query += " AND " + self.QUERY_FILTER_META.format(key)
                         params.append(value)
 
+                if order_by:
+                    fts_query += " ORDER BY "
+                    if isinstance(order_by, str):
+                        order_by = [order_by]
+                    for field in order_by:
+                        if field.startswith("-"):
+                            descending = True
+                        else:
+                            descending = False
+                        fts_query += self.QUERY_ORDER_META.format(field.lstrip("+-"))
+                        if descending:
+                            fts_query += " DESC"
+                        fts_query += ","
+                    fts_query = fts_query.rstrip(",")  # remove last trailing comma
+
                 if limit:
                     fts_query += " LIMIT (?)"
+                    params.append(int(limit))
+                if offset:
+                    fts_query += " OFFSET (?)"
+                    params.append(int(offset))
 
-                if order_by:
-                    fts_query += " ORDER BY " + self.QUERY_ORDER_META.format(order_by)
-                    if descending:
-                        fts_query += " DESC"
                 result = conn.execute(fts_query, params) or []
                 if self.IS_POSTGRES:
                     result = conn.fetchall()

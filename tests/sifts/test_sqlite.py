@@ -112,3 +112,71 @@ def test_query_metadata(tmp_path):
     res = search.query("sit")
     assert len(res) == 1
     assert res[0]["metadata"] is None
+
+
+def test_query_order(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path)
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem")
+    assert len(res) == 10
+    # k1
+    res = search.query("Lorem", order_by="k1")
+    assert len(res) == 10
+    assert [r["id"][1:] for r in res] == list("0123456789")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0abcdefghi")
+    # +k1
+    res = search.query("Lorem", order_by="+k1")
+    assert [r["id"][1:] for r in res] == list("0123456789")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0abcdefghi")
+    # -k1
+    res = search.query("Lorem", order_by="-k1")
+    assert [r["id"][1:] for r in res] == list("9876543210")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("ihgfedcba0")
+    # k2,k1
+    res = search.query("Lorem", order_by=["k2", "k1"])
+    assert [r["id"][1:] for r in res] == list("0789456123")
+    assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("0aaabbbccc")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0ghidefabc")
+    # k2,-k1
+    res = search.query("Lorem", order_by=["k2", "-k1"])
+    assert [r["id"][1:] for r in res] == list("0987654321")
+    assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("0aaabbbccc")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0ihgfedcba")
+
+
+def test_query_limit_offset(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path)
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem", order_by="k1")
+    assert len(res) == 10
+    res = search.query("Lorem", order_by="k1", limit=0)
+    assert len(res) == 10
+    res = search.query("Lorem", order_by="k1", limit=3)
+    assert len(res) == 3
+    assert [r["id"][1:] for r in res] == list("012")
+    res = search.query("Lorem", order_by="k1", limit=3, offset=3)
+    assert len(res) == 3
+    assert [r["id"][1:] for r in res] == list("345")
+    res = search.query("Lorem", order_by="k1", limit=3, offset=8)
+    assert len(res) == 2
+    assert [r["id"][1:] for r in res] == list("89")
