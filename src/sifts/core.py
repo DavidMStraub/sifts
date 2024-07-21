@@ -199,6 +199,34 @@ class SearchEngineBase:
                 return []
         return result
 
+    def all_documents(self, content: bool = False):
+        """Return all documents."""
+        with self.conn() as conn:
+            if content:
+                cols = "id, metadata, content"
+            else:
+                cols = "id, metadata"
+            query = f"SELECT {cols} FROM documents"
+            if self.prefix is None:
+                query += " WHERE prefix IS NULL"
+            else:
+                query += f" WHERE prefix = '{self.prefix}'"
+            result = conn.execute(query)
+            if self.IS_POSTGRES:
+                result = conn.fetchall()
+
+            result = [
+                {
+                    "id": match[0],
+                    "metadata": (
+                        match[1] if self.IS_POSTGRES else json.loads(match[1] or "null")
+                    ),
+                    "content": match[2] if len(match) > 2 else None,
+                }
+                for match in result
+            ]
+        return result
+
 
 class SearchEngineSQLite(SearchEngineBase):
 

@@ -252,3 +252,9 @@ def test_query_where(postgres_service, search_engine):
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem", where={"k2": "a"}, order_by="k1")
     assert len(res) == 3
+
+
+def test_all_docs(postgres_service, search_engine):
+    search = search_engine
+    search.add(["Lorem ipsum dolor"])
+    search.add(["sit amet"])

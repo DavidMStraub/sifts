@@ -200,3 +200,10 @@ def test_query_where(tmp_path):
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem", where={"k2": "a"}, order_by="k1")
     assert len(res) == 3
+
+
+def test_all_docs(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = SearchEngineSQLite(path)
+    search.add(["Lorem ipsum dolor"])
+    search.add(["sit amet"])
