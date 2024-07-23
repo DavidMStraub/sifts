@@ -7,6 +7,7 @@ import sqlite3
 import uuid
 
 import psycopg2
+import psycopg2.extras
 from urllib.parse import urlparse
 from contextlib import contextmanager
 
@@ -62,7 +63,7 @@ class SearchEngineBase:
 
     IS_POSTGRES = False
     QUERY_CREATE_INDEX = ""
-    QUERY_CREATE_DOCUMENT = ""
+    QUERY_CREATE_DOC = ""
     QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_DELETE = ""
@@ -84,8 +85,8 @@ class SearchEngineBase:
     def create_tables(self) -> None:
         with self.conn() as conn:
             conn.execute(self.QUERY_CREATE_INDEX)
-            if self.QUERY_CREATE_DOCUMENT:
-                conn.execute(self.QUERY_CREATE_DOCUMENT)
+            if self.QUERY_CREATE_DOC:
+                conn.execute(self.QUERY_CREATE_DOC)
             conn.execute("CREATE INDEX IF NOT EXISTS prefix_idx ON documents (prefix)")
 
     def add(
@@ -103,22 +104,16 @@ class SearchEngineBase:
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
         prefixes = [self.prefix for _ in contents]
-        with self.conn() as conn:
-            if self.IS_POSTGRES:
-                conn.executemany(
-                    self.QUERY_INSERT_DOC, list(zip(contents, ids, metadatas, prefixes))
-                )
-            else:
-                conn.executemany(
-                    self.QUERY_INSERT_DOC, list(zip(ids, metadatas, prefixes))
-                )
+        return self._add(contents, ids, metadatas, prefixes)
 
-            if self.IS_POSTGRES:
-                conn.executemany(self.QUERY_INSERT_INDEX, [(did,) for did in ids])
-            else:
-                conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in ids])
-                conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
-        return ids
+    def _add(
+        self,
+        contents: list[str],
+        ids: list[str | None] | None,
+        metadatas: list[dict[str, str] | None] | None,
+        prefixes: list[str | None],
+    ) -> list[str]:
+        raise NotImplementedError
 
     def update(
         self,
@@ -209,10 +204,9 @@ class SearchEngineBase:
         """Return all documents."""
         with self.conn() as conn:
             if content:
-                cols = "id, metadata, content"
+                query = self.QUERY_SELECT
             else:
-                cols = "id, metadata"
-            query = f"SELECT {cols} FROM documents"
+                query = "SELECT id, metadata FROM documents"
             if self.prefix is None:
                 query += " WHERE prefix IS NULL"
             else:
@@ -233,17 +227,38 @@ class SearchEngineBase:
             ]
         return result
 
+    def delete_all(self) -> None:
+        """Delete all documents."""
+        if self.prefix is None:
+            where = "WHERE doc.prefix IS NULL"
+        else:
+            where = f"WHERE doc.prefix = '{self.prefix}'"
+        with self.conn() as conn:
+            if not self.IS_POSTGRES:
+                conn.execute(
+                    f"""
+                    DELETE FROM documents_fts
+                    WHERE id IN (
+                        SELECT doc.id
+                        FROM documents doc
+                        {where}
+                    );"""
+                )
+            conn.execute(f"DELETE FROM documents AS doc {where}")
+
 
 class SearchEngineSQLite(SearchEngineBase):
 
     QUERY_CREATE_INDEX = (
         "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
     )
-    QUERY_CREATE_DOCUMENT = """CREATE TABLE IF NOT EXISTS documents (
+    QUERY_CREATE_DOC = """
+        CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
             prefix TEXT,
             metadata JSON
-        )"""
+        );
+        """
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
     QUERY_INSERT_DOC = """INSERT INTO documents
             (id, metadata, prefix) VALUES (?, ?, ?)
@@ -262,6 +277,12 @@ class SearchEngineSQLite(SearchEngineBase):
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
     QUERY_LIMIT = " LIMIT (?)"
     QUERY_OFFSET = " OFFSET (?)"
+    QUERY_SELECT = """
+                    SELECT doc.id, doc.metadata, fts.content
+                    FROM documents doc
+                    INNER JOIN documents_fts fts
+                    ON doc.id = fts.id
+                """
 
     def __init__(self, db_path="search_engine.db", prefix: str | None = None) -> None:
         self.db_path = db_path
@@ -271,11 +292,33 @@ class SearchEngineSQLite(SearchEngineBase):
     def conn(self):
         """Provide a transactional scope around a series of operations."""
         conn = sqlite3.connect(self.db_path)
+        conn.execute("begin")
         try:
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+    def _add(
+        self,
+        contents: list[str],
+        ids: list[str | None] | None,
+        metadatas: list[dict[str, str] | None] | None,
+        prefixes: list[str | None],
+    ) -> list[str]:
+        with self.conn() as conn:
+            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, prefixes)))
+
+            conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
+            conn.executemany(
+                "INSERT INTO temp_ids (id) VALUES (?)", [(did,) for did in ids]
+            )
+            conn.execute(
+                "DELETE FROM documents_fts WHERE id IN (SELECT id FROM temp_ids)"
+            )
+            conn.execute("DROP TABLE temp_ids")
+            conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
+        return ids
 
 
 class SearchEnginePostgreSQL(SearchEngineBase):
@@ -291,15 +334,15 @@ class SearchEnginePostgreSQL(SearchEngineBase):
         );
         CREATE INDEX IF NOT EXISTS documents_tsvector_idx ON documents USING GIN (tsvector);
         CREATE INDEX IF NOT EXISTS prefix_idx ON documents (prefix);
+
+        CREATE OR REPLACE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+        ON documents FOR EACH ROW EXECUTE FUNCTION
+        tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
         """
-
-    QUERY_CREATE_DOCUMENT = ""
-
-    QUERY_INSERT_INDEX = (
-        "UPDATE documents SET tsvector = to_tsvector('simple', content) WHERE id = %s"
-    )
+    QUERY_CREATE_DOC = ""
+    QUERY_INSERT_INDEX = ""
     QUERY_INSERT_DOC = """INSERT INTO documents
-        (content, id, metadata, prefix) VALUES (%s, %s, %s, %s)
+        (content, id, metadata, prefix) VALUES %s
         ON CONFLICT(id) DO UPDATE SET
             content = EXCLUDED.content,
             metadata = EXCLUDED.metadata,
@@ -319,6 +362,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_ORDER_META = "metadata->>'{}'"
     QUERY_LIMIT = " LIMIT %s"
     QUERY_OFFSET = " OFFSET %s"
+    QUERY_SELECT = "SELECT id, metadata, content FROM documents"
 
     def __init__(
         self,
@@ -333,10 +377,26 @@ class SearchEnginePostgreSQL(SearchEngineBase):
         """Provide a transactional scope around a series of operations."""
         conn = psycopg2.connect(dsn=self.dsn)
         try:
-            yield conn.cursor()
+            cursor = conn.cursor()
+            yield cursor
             conn.commit()
         finally:
             conn.close()
+
+    def _add(
+        self,
+        contents: list[str],
+        ids: list[str | None],
+        metadatas: list[dict[str, str] | None],
+        prefixes: list[str | None],
+    ) -> list[str]:
+        with self.conn() as conn:
+            psycopg2.extras.execute_values(
+                conn,
+                self.QUERY_INSERT_DOC,
+                list(zip(contents, ids, metadatas, prefixes)),
+            )
+        return ids
 
 
 def db_url_to_dsn(db_url: str) -> str:
