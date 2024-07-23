@@ -71,7 +71,8 @@ def test_query_document(postgres_service, search_engine):
     content = ["test query content"]
     search_engine.add(content)
     results = search_engine.query("content")
-    assert len(results) == 1
+    assert results["total"] == 1
+    assert len(results["results"]) == 1
 
 
 def test_update_document(postgres_service, search_engine):
@@ -80,9 +81,11 @@ def test_update_document(postgres_service, search_engine):
     updated_content = ["updated content"]
     search_engine.update(ids, updated_content)
     results = search_engine.query("updated")
-    assert len(results) == 1
+    assert results["total"] == 1
+    assert len(results["results"]) == 1
     results = search_engine.query("content")
-    assert len(results) == 1
+    assert results["total"] == 1
+    assert len(results["results"]) == 1
 
 
 def test_delete_document(postgres_service, search_engine):
@@ -90,38 +93,39 @@ def test_delete_document(postgres_service, search_engine):
     ids = search_engine.add(content)
     search_engine.delete(ids)
     results = search_engine.query("delete")
-    assert len(results) == 0
+    assert results["total"] == 0
+    assert len(results["results"]) == 0
 
 
 def test_add(postgres_service, search_engine):
-    assert search_engine.query("Lorem") == []
+    assert search_engine.query("Lorem") == {"total": 0, "results": []}
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
-    assert len(search_engine.query("Lorem")) == 1
-    assert search_engine.query("Lorem")[0]["id"] == ids1[0]
+    assert len(search_engine.query("Lorem")["results"]) == 1
+    assert search_engine.query("Lorem")["results"][0]["id"] == ids1[0]
 
 
 def test_query_wildcard(postgres_service, search_engine):
-    assert search_engine.query("Lorem") == []
+    assert search_engine.query("Lorem") == {"total": 0, "results": []}
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
-    assert len(search_engine.query("am*")) == 1
-    assert search_engine.query("am*")[0]["id"] == ids2[0]
-    assert len(search_engine.query("ame*")) == 1
+    assert len(search_engine.query("am*")["results"]) == 1
+    assert search_engine.query("am*")["results"][0]["id"] == ids2[0]
+    assert len(search_engine.query("ame*")["results"]) == 1
 
 
 def test_query_pr(postgres_service, search_engine):
-    assert search_engine.query("Lorem") == []
+    assert search_engine.query("Lorem") == {"total": 0, "results": []}
     ids1 = search_engine.add(["Lorem ipsum dolor"])
     ids2 = search_engine.add(["sit amet"])
-    assert len(search_engine.query("Lorem or amet")) == 2
+    assert len(search_engine.query("Lorem or amet")["results"]) == 2
 
 
 def test_add_prefix(postgres_service, search_engine, search_engine_prefix):
-    assert search_engine_prefix.query("Lorem") == []
+    assert search_engine_prefix.query("Lorem") == {"total": 0, "results": []}
     search_engine_prefix.add(["Lorem ipsum dolor"])
-    assert len(search_engine_prefix.query("Lorem")) == 1
-    assert len(search_engine.query("Lorem")) == 0
+    assert len(search_engine_prefix.query("Lorem")["results"]) == 1
+    assert len(search_engine.query("Lorem")["results"]) == 0
 
 
 def test_add_id(postgres_service, search_engine):
@@ -131,45 +135,48 @@ def test_add_id(postgres_service, search_engine):
     ids = search_engine.add(["y"], ids=["my_id"])
     assert ids == ["my_id"]
     res = search_engine.query("y")
-    assert len(res) == 1
+    assert len(res["results"]) == 1
+    res = res["results"]
     assert res[0]["id"] == "my_id"
     # does not raise, but updates
     search_engine.add(["z"], ids=["my_id"])
     res = search_engine.query("y")
-    assert len(res) == 0
+    assert len(res["results"]) == 0
     res = search_engine.query("z")
-    assert len(res) == 1
+    assert len(res["results"]) == 1
 
 
 def test_update(postgres_service, search_engine):
     ids = search_engine.add(["Lorem ipsum"])
     res = search_engine.query("Lorem")
-    assert len(res) == 1
+    assert len(res["results"]) == 1
+    res = res["results"]
     assert res[0]["id"] == ids[0]
     search_engine.update(ids=ids, contents=["dolor sit"])
     res = search_engine.query("Lorem")
-    assert len(res) == 0
+    assert len(res["results"]) == 0
     res = search_engine.query("sit")
-    assert len(res) == 1
+    assert len(res["results"]) == 1
+    res = res["results"]
     assert res[0]["id"] == ids[0]
 
 
 def test_delete(postgres_service, search_engine):
     ids = search_engine.add(["Lorem ipsum"])
     res = search_engine.query("Lorem")
-    assert len(res) == 1
+    assert len(res["results"]) == 1
     search_engine.delete(ids)
     res = search_engine.query("Lorem")
-    assert len(res) == 0
+    assert len(res["results"]) == 0
     search_engine.delete(ids)
 
 
 def test_query_multiple(postgres_service, search_engine):
     search_engine.add(["Lorem ipsum dolor"])
     search_engine.add(["sit amet"])
-    assert len(search_engine.query("Lorem ipsum")) == 1
-    assert len(search_engine.query("sit amet")) == 1
-    assert len(search_engine.query("Lorem sit")) == 0
+    assert len(search_engine.query("Lorem ipsum")["results"]) == 1
+    assert len(search_engine.query("sit amet")["results"]) == 1
+    assert len(search_engine.query("Lorem sit")["results"]) == 0
 
 
 def test_query_order(postgres_service, search_engine):
@@ -185,27 +192,28 @@ def test_query_order(postgres_service, search_engine):
     search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem")
-    assert len(res) == 10
+    assert len(res["results"]) == 10
     # k1
     res = search.query("Lorem", order_by="k1")
+    res = res["results"]
     assert len(res) == 10
     assert [r["id"][1:] for r in res] == list("1234567890")
     assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("abcdefghi0")
     # +k1
-    res = search.query("Lorem", order_by="+k1")
+    res = search.query("Lorem", order_by="+k1")["results"]
     assert [r["id"][1:] for r in res] == list("1234567890")
     assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("abcdefghi0")
     # -k1
-    res = search.query("Lorem", order_by="-k1")
+    res = search.query("Lorem", order_by="-k1")["results"]
     assert [r["id"][1:] for r in res] == list("0987654321")
     assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0ihgfedcba")
     # k2,k1
-    res = search.query("Lorem", order_by=["k2", "k1"])
+    res = search.query("Lorem", order_by=["k2", "k1"])["results"]
     assert [r["id"][1:] for r in res] == list("7894561230")
     assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("aaabbbccc0")
     assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("ghidefabc0")
     # k2,-k1
-    res = search.query("Lorem", order_by=["k2", "-k1"])
+    res = search.query("Lorem", order_by=["k2", "-k1"])["results"]
     assert [r["id"][1:] for r in res] == list("9876543210")
     assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("aaabbbccc0")
     assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("ihgfedcba0")
@@ -224,17 +232,20 @@ def test_query_limit_offset(postgres_service, search_engine):
     search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem", order_by="k1")
-    assert len(res) == 10
+    assert len(res["results"]) == 10
     res = search.query("Lorem", order_by="k1", limit=0)
-    assert len(res) == 10
+    assert len(res["results"]) == 10
     res = search.query("Lorem", order_by="k1", limit=3)
-    assert len(res) == 3
+    assert len(res["results"]) == 3
+    res = res["results"]
     assert [r["id"][1:] for r in res] == list("123")
     res = search.query("Lorem", order_by="k1", limit=3, offset=3)
-    assert len(res) == 3
+    assert len(res["results"]) == 3
+    res = res["results"]
     assert [r["id"][1:] for r in res] == list("456")
     res = search.query("Lorem", order_by="k1", limit=3, offset=8)
-    assert len(res) == 2
+    assert len(res["results"]) == 2
+    res = res["results"]
     assert [r["id"][1:] for r in res] == list("90")
 
 
@@ -251,7 +262,7 @@ def test_query_where(postgres_service, search_engine):
     search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem", where={"k2": "a"}, order_by="k1")
-    assert len(res) == 3
+    assert len(res["results"]) == 3
 
 
 def test_all_docs(postgres_service, search_engine):

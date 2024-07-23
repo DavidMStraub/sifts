@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import uuid
+from typing import Any, TypedDict
 
 import psycopg2
 import psycopg2.extras
@@ -14,6 +15,11 @@ from contextlib import contextmanager
 
 def make_id():
     return str(uuid.uuid4())
+
+
+class QueryResult(TypedDict):
+    total: int
+    results: list[dict[str, Any]]
 
 
 class QueryParser:
@@ -66,12 +72,14 @@ class SearchEngineBase:
     QUERY_CREATE_DOC = ""
     QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
-    QUERY_DELETE = ""
     QUERY_SEARCH = ""
     QUERY_FILTER_META = ""
     QUERY_ORDER_META = ""
     QUERY_LIMIT = ""
     QUERY_OFFSET = ""
+    QUERY_DELETE_INDEX = ""
+    QUERY_DELETE_DOC = ""
+    QUERY_SELECT = ""
 
     def __init__(self, prefix: str | None = None) -> None:
         self.prefix = prefix
@@ -109,8 +117,8 @@ class SearchEngineBase:
     def _add(
         self,
         contents: list[str],
-        ids: list[str | None] | None,
-        metadatas: list[dict[str, str] | None] | None,
+        ids: list[str | None],
+        metadatas: list[str | None],
         prefixes: list[str | None],
     ) -> list[str]:
         raise NotImplementedError
@@ -137,7 +145,7 @@ class SearchEngineBase:
         offset: int = 0,
         where: dict | None = None,
         order_by: str | None = None,
-    ) -> list:
+    ) -> QueryResult:
         with self.conn() as conn:
             try:
                 fts_query = self.QUERY_SEARCH
@@ -174,14 +182,20 @@ class SearchEngineBase:
 
                 if limit:
                     fts_query += self.QUERY_LIMIT
-                    params.append(int(limit))
+                    params.append(str(int(limit)))
                 if offset:
                     fts_query += self.QUERY_OFFSET
-                    params.append(int(offset))
+                    params.append(str(int(offset)))
 
                 result = conn.execute(fts_query, params) or []
                 if self.IS_POSTGRES:
                     result = conn.fetchall()
+                else:
+                    result = list(result)
+                if not result:
+                    n_tot = 0
+                else:
+                    n_tot = result[0][4]
 
                 result = [
                     {
@@ -197,8 +211,8 @@ class SearchEngineBase:
                     for match in result
                 ]
             except (sqlite3.OperationalError, psycopg2.OperationalError):
-                return []
-        return result
+                return {"total": 0, "results": []}
+        return {"total": n_tot, "results": result}
 
     def all_documents(self, content: bool = False):
         """Return all documents."""
@@ -268,7 +282,8 @@ class SearchEngineSQLite(SearchEngineBase):
             """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
-    QUERY_SEARCH = """SELECT doc.id, fts.rank, fts.content, doc.metadata
+    QUERY_SEARCH = """SELECT doc.id, fts.rank, fts.content, doc.metadata,
+                count(*) OVER() AS full_count
                 FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
                 WHERE fts.content MATCH (?)
@@ -302,8 +317,8 @@ class SearchEngineSQLite(SearchEngineBase):
     def _add(
         self,
         contents: list[str],
-        ids: list[str | None] | None,
-        metadatas: list[dict[str, str] | None] | None,
+        ids: list[str | None],
+        metadatas: list[str | None],
         prefixes: list[str | None],
     ) -> list[str]:
         with self.conn() as conn:
@@ -353,7 +368,8 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = %s"
 
     QUERY_SEARCH = """
-    SELECT id, ts_rank(tsvector, query) AS rank, content, metadata
+    SELECT id, ts_rank(tsvector, query) AS rank, content, metadata,
+    count(*) OVER() AS full_count
     FROM documents, to_tsquery('simple', %s) query
     WHERE tsvector @@ query
     """
@@ -387,7 +403,7 @@ class SearchEnginePostgreSQL(SearchEngineBase):
         self,
         contents: list[str],
         ids: list[str | None],
-        metadatas: list[dict[str, str] | None],
+        metadatas: list[str | None],
         prefixes: list[str | None],
     ) -> list[str]:
         with self.conn() as conn:
