@@ -104,9 +104,15 @@ class SearchEngineBase:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
         prefixes = [self.prefix for _ in contents]
         with self.conn() as conn:
-            conn.executemany(
-                self.QUERY_INSERT_DOC, list(zip(contents, ids, metadatas, prefixes))
-            )
+            if self.IS_POSTGRES:
+                conn.executemany(
+                    self.QUERY_INSERT_DOC, list(zip(contents, ids, metadatas, prefixes))
+                )
+            else:
+                conn.executemany(
+                    self.QUERY_INSERT_DOC, list(zip(ids, metadatas, prefixes))
+                )
+
             if self.IS_POSTGRES:
                 conn.executemany(self.QUERY_INSERT_INDEX, [(did,) for did in ids])
             else:
@@ -235,21 +241,19 @@ class SearchEngineSQLite(SearchEngineBase):
     )
     QUERY_CREATE_DOCUMENT = """CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
-            content TEXT,
             prefix TEXT,
             metadata JSON
         )"""
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
     QUERY_INSERT_DOC = """INSERT INTO documents
-            (content, id, metadata, prefix) VALUES (?, ?, ?, ?)
+            (id, metadata, prefix) VALUES (?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                content = excluded.content,
                 metadata = excluded.metadata,
                 prefix = excluded.prefix
             """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
-    QUERY_SEARCH = """SELECT doc.id, fts.rank, doc.content, doc.metadata
+    QUERY_SEARCH = """SELECT doc.id, fts.rank, fts.content, doc.metadata
                 FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
                 WHERE fts.content MATCH (?)
