@@ -74,6 +74,8 @@ class SearchEngineBase:
     QUERY_INSERT_INDEX = ""
     QUERY_SEARCH = ""
     QUERY_FILTER_META = ""
+    QUERY_FILTER_META_IN = ""
+    QUERY_FILTER_META_NOT_IN = ""
     QUERY_ORDER_META = ""
     QUERY_LIMIT = ""
     QUERY_OFFSET = ""
@@ -160,8 +162,29 @@ class SearchEngineBase:
 
                 if where:
                     for key, value in where.items():
-                        fts_query += " AND " + self.QUERY_FILTER_META.format(key)
-                        params.append(value)
+                        if isinstance(value, dict):
+                            if "$in" not in value and "$nin" not in value:
+                                raise ValueError("Invalid where condition")
+                            if "$in" in value:
+                                values = [str(val) for val in value["$in"]]
+                                placeholders = ",".join("?" for _ in values)
+                                fts_query += " AND " + self.QUERY_FILTER_META_IN.format(
+                                    key, placeholders
+                                )
+                            else:
+                                values = [str(val) for val in value["$nin"]]
+                                placeholders = ",".join("?" for _ in values)
+                                fts_query += (
+                                    " AND "
+                                    + self.QUERY_FILTER_META_NOT_IN.format(
+                                        key, placeholders
+                                    )
+                                )
+                            params += values
+
+                        else:
+                            fts_query += " AND " + self.QUERY_FILTER_META.format(key)
+                            params.append(value)
 
                 if order_by:
                     fts_query += " ORDER BY "
@@ -186,7 +209,6 @@ class SearchEngineBase:
                 if offset:
                     fts_query += self.QUERY_OFFSET
                     params.append(str(int(offset)))
-
                 result = conn.execute(fts_query, params) or []
                 if self.IS_POSTGRES:
                     result = conn.fetchall()
@@ -289,6 +311,8 @@ class SearchEngineSQLite(SearchEngineBase):
                 WHERE fts.content MATCH (?)
                 """
     QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") = (?)'
+    QUERY_FILTER_META_IN = 'json_extract(doc.metadata, "$.{}") IN ({})'
+    QUERY_FILTER_META_NOT_IN = 'json_extract(doc.metadata, "$.{}") NOT IN ({})'
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
     QUERY_LIMIT = " LIMIT (?)"
     QUERY_OFFSET = " OFFSET (?)"
@@ -375,6 +399,8 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     """
 
     QUERY_FILTER_META = "metadata->>'{}' = %s"
+    QUERY_FILTER_META_IN = "metadata->>'{}' IN ({})"
+    QUERY_FILTER_META_NOT_IN = "metadata->>'{}' NOT IN ({})"
     QUERY_ORDER_META = "metadata->>'{}'"
     QUERY_LIMIT = " LIMIT %s"
     QUERY_OFFSET = " OFFSET %s"
