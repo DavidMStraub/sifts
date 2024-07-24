@@ -4,7 +4,7 @@ import time
 
 import pytest
 import psycopg2
-from sifts.core import SearchEnginePostgreSQL
+from sifts.core import CollectionPostgreSQL
 from psycopg2 import OperationalError
 
 TEST_DB_DSN = "postgresql://testuser:testpass@localhost:5432/testdb"
@@ -47,7 +47,7 @@ def postgres_service(docker_services):
 
 @pytest.fixture
 def search_engine():
-    engine = SearchEnginePostgreSQL(dsn=TEST_DB_DSN)
+    engine = CollectionPostgreSQL(dsn=TEST_DB_DSN)
     yield engine
     with engine.conn() as conn:
         conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")
@@ -55,7 +55,7 @@ def search_engine():
 
 @pytest.fixture
 def search_engine_prefix():
-    engine = SearchEnginePostgreSQL(dsn=TEST_DB_DSN, prefix="my_prefix")
+    engine = CollectionPostgreSQL(dsn=TEST_DB_DSN, prefix="my_prefix")
     yield engine
     with engine.conn() as conn:
         conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")

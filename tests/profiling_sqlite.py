@@ -8,7 +8,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from sifts import SearchEngine
+from sifts import Collection
 
 
 @contextmanager
@@ -121,10 +121,10 @@ def run_timing():
     path = tmp_dir / "search_engine.db"
 
     with timer("Create database table"):
-        SearchEngine(f"sqlite:///{path}", prefix="123")
+        Collection(f"sqlite:///{path}", prefix="123")
 
     with timer("Instantiate again"):
-        engine = SearchEngine(f"sqlite:///{path}", prefix="123")
+        engine = Collection(f"sqlite:///{path}", prefix="123")
 
     run_add_update_delete(engine)
     shutil.rmtree(tmp_dir)

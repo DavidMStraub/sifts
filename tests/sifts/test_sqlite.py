@@ -4,12 +4,12 @@ import os
 import sqlite3
 
 import pytest
-from sifts.core import SearchEngineSQLite
+from sifts.core import CollectionSQLite
 
 
 def test_init(tmp_path):
     path = tmp_path / "search_engine.db"
-    SearchEngineSQLite(path)
+    CollectionSQLite(path)
     assert os.path.isfile(path)
     conn = sqlite3.connect(path)
     cursor = conn.cursor()
@@ -25,7 +25,7 @@ def test_init(tmp_path):
 
 def test_add(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     assert search.query("Lorem") == {"results": [], "total": 0}
     ids1 = search.add(["Lorem ipsum dolor"])
     ids2 = search.add(["sit amet"])
@@ -38,7 +38,7 @@ def test_add(tmp_path):
 
 def test_query_multiple(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem ipsum dolor"])
     search.add(["sit amet"])
     assert len(search.query("Lorem ipsum")["results"]) == 1
@@ -48,19 +48,19 @@ def test_query_multiple(tmp_path):
 
 def test_add_prefix(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path, prefix="my_prefix")
+    search = CollectionSQLite(path, prefix="my_prefix")
     assert search.query("Lorem")["results"] == []
     search.add(["Lorem ipsum dolor"])
     assert len(search.query("Lorem")["results"]) == 1
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     assert len(search.query("Lorem")["results"]) == 0
-    search = SearchEngineSQLite(path, prefix="my_prefix")
+    search = CollectionSQLite(path, prefix="my_prefix")
     assert len(search.query("Lorem")["results"]) == 1
 
 
 def test_add_id(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     ids = search.add(["x"])
     assert len(ids) == 1
     assert len(ids[0]) == 36  # is UUIDv4
@@ -80,7 +80,7 @@ def test_add_id(tmp_path):
 
 def test_update(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     ids = search.add(["Lorem ipsum"])
     res = search.query("Lorem")
     res = res["results"]
@@ -97,7 +97,7 @@ def test_update(tmp_path):
 
 def test_delete(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     ids = search.add(["Lorem ipsum", "Lorem dolor"])
     res = search.query("Lorem")
     assert len(res["results"]) == 2
@@ -109,7 +109,7 @@ def test_delete(tmp_path):
 
 def test_query_metadata(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem ipsum dolor"], metadatas=[{"foo": "bar"}])
     search.add(["sit amet"])
     res = search.query("Lorem")
@@ -125,7 +125,7 @@ def test_query_metadata(tmp_path):
 
 def test_query_order(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
     search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
     search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
@@ -168,7 +168,7 @@ def test_query_order(tmp_path):
 
 def test_query_limit_offset(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
     search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
     search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
@@ -204,7 +204,7 @@ def test_query_limit_offset(tmp_path):
 
 def test_query_where(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
     search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
     search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
@@ -223,7 +223,7 @@ def test_query_where(tmp_path):
 
 def test_query_where_in(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
     search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
     search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
@@ -255,6 +255,6 @@ def test_query_where_in(tmp_path):
 
 def test_all_docs(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = SearchEngineSQLite(path)
+    search = CollectionSQLite(path)
     search.add(["Lorem ipsum dolor"])
     search.add(["sit amet"])

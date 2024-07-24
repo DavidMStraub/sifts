@@ -18,7 +18,7 @@ pip install sifts
 import sifts
 
 # by default, creates a new SQLite database in the working directory
-search = sifts.SearchEngine()
+search = sifts.Collection()
 
 # Add docs to the index. Can also update and delete.
 search.add(

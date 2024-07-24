@@ -5,7 +5,7 @@ import time
 
 import psycopg2
 from psycopg2 import OperationalError
-from sifts import SearchEngine
+from sifts import Collection
 from profiling_sqlite import run_add_update_delete, timer
 
 
@@ -41,12 +41,12 @@ def run_timing():
     try:
 
         with timer("Create database table"):
-            SearchEngine(
+            Collection(
                 "postgresql://testuser:testpass@localhost:5432/testdb", prefix="123"
             )
 
         with timer("Instantiate again"):
-            engine = SearchEngine(
+            engine = Collection(
                 "postgresql://testuser:testpass@localhost:5432/testdb", prefix="123"
             )
 

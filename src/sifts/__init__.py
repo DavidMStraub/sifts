@@ -16,4 +16,4 @@ __all__ = (
     "__version_tuple__",
 )
 
-from .core import SearchEngine
+from .core import Collection
