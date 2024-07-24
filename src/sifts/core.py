@@ -153,10 +153,7 @@ class CollectionBase:
         with self.conn() as conn:
             try:
                 fts_query = self.QUERY_SEARCH
-                if self.name is None:
-                    fts_query += " AND name IS NULL"
-                else:
-                    fts_query += f" AND name = '{self.name}'"
+                fts_query += f" AND name = '{self.name}'"
 
                 backend = "postgresql" if self.IS_POSTGRES else "sqlite"
                 query_string = str(QueryParser(query_string, backend=backend))
@@ -245,10 +242,7 @@ class CollectionBase:
                 query = self.QUERY_SELECT
             else:
                 query = "SELECT id, metadata FROM documents"
-            if self.name is None:
-                query += " WHERE name IS NULL"
-            else:
-                query += f" WHERE name = '{self.name}'"
+            query += f" WHERE name = '{self.name}'"
             result = conn.execute(query)
             if self.IS_POSTGRES:
                 result = conn.fetchall()
@@ -267,10 +261,7 @@ class CollectionBase:
 
     def delete_all(self) -> None:
         """Delete all documents."""
-        if self.name is None:
-            where = "WHERE doc.name IS NULL"
-        else:
-            where = f"WHERE doc.name = '{self.name}'"
+        where = f"WHERE doc.name = '{self.name}'"
         with self.conn() as conn:
             if not self.IS_POSTGRES:
                 conn.execute(
@@ -455,10 +446,10 @@ def db_url_to_dsn(db_url: str) -> str:
     return dsn
 
 
-def Collection(db_url: str, name: str | None = None) -> CollectionBase:
+def Collection(db_url: str, name: str) -> CollectionBase:
     """Constructor for search engine instance."""
     if not db_url:
         return CollectionSQLite(name=name)
     if db_url.startswith("sqlite:///"):
         return CollectionSQLite(db_path=db_url[10:], name=name)
-    return CollectionPostgreSQL(dsn=db_url_to_dsn(db_url))
+    return CollectionPostgreSQL(dsn=db_url_to_dsn(db_url), name=name)
