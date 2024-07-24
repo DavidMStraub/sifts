@@ -42,12 +42,12 @@ def run_timing():
 
         with timer("Create database table"):
             Collection(
-                "postgresql://testuser:testpass@localhost:5432/testdb", prefix="123"
+                "postgresql://testuser:testpass@localhost:5432/testdb", name="123"
             )
 
         with timer("Instantiate again"):
             engine = Collection(
-                "postgresql://testuser:testpass@localhost:5432/testdb", prefix="123"
+                "postgresql://testuser:testpass@localhost:5432/testdb", name="123"
             )
 
         run_add_update_delete(engine, n=100000)

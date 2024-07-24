@@ -46,15 +46,15 @@ def test_query_multiple(tmp_path):
     assert len(search.query("Lorem sit")["results"]) == 0
 
 
-def test_add_prefix(tmp_path):
+def test_add_name(tmp_path):
     path = tmp_path / "search_engine.db"
-    search = CollectionSQLite(path, prefix="my_prefix")
+    search = CollectionSQLite(path, name="my_name")
     assert search.query("Lorem")["results"] == []
     search.add(["Lorem ipsum dolor"])
     assert len(search.query("Lorem")["results"]) == 1
     search = CollectionSQLite(path)
     assert len(search.query("Lorem")["results"]) == 0
-    search = CollectionSQLite(path, prefix="my_prefix")
+    search = CollectionSQLite(path, name="my_name")
     assert len(search.query("Lorem")["results"]) == 1
 
 

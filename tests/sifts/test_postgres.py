@@ -54,8 +54,8 @@ def search_engine():
 
 
 @pytest.fixture
-def search_engine_prefix():
-    engine = CollectionPostgreSQL(dsn=TEST_DB_DSN, prefix="my_prefix")
+def search_engine_name():
+    engine = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="my_name")
     yield engine
     with engine.conn() as conn:
         conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")
@@ -121,10 +121,10 @@ def test_query_pr(postgres_service, search_engine):
     assert len(search_engine.query("Lorem or amet")["results"]) == 2
 
 
-def test_add_prefix(postgres_service, search_engine, search_engine_prefix):
-    assert search_engine_prefix.query("Lorem") == {"total": 0, "results": []}
-    search_engine_prefix.add(["Lorem ipsum dolor"])
-    assert len(search_engine_prefix.query("Lorem")["results"]) == 1
+def test_add_name(postgres_service, search_engine, search_engine_name):
+    assert search_engine_name.query("Lorem") == {"total": 0, "results": []}
+    search_engine_name.add(["Lorem ipsum dolor"])
+    assert len(search_engine_name.query("Lorem")["results"]) == 1
     assert len(search_engine.query("Lorem")["results"]) == 0
 
 

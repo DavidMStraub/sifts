@@ -18,16 +18,16 @@ pip install sifts
 import sifts
 
 # by default, creates a new SQLite database in the working directory
-search = sifts.Collection()
+collection = sifts.Collection(name="my_collection")
 
 # Add docs to the index. Can also update and delete.
-search.add(
+collection.add(
     documents=["Lorem ipsum dolor", "sit amet"],
     metadatas=[{"foo": "bar"}, {"foo": "baz"}], # otpional, can filter on these
     ids=["doc1", "doc2"], # unique for each doc. Uses UUIDs if omitted
 )
 
-results = search.query(
+results = collection.query(
     "Lorem",
     # limit=2,  # optionally limit the number of results
     # where={"foo": "bar"},  # optional filter

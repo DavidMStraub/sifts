@@ -65,7 +65,7 @@ class QueryParser:
         return self._to_pg()
 
 
-class SearchEngineBase:
+class CollectionBase:
 
     IS_POSTGRES = False
     QUERY_CREATE_INDEX = ""
@@ -83,8 +83,10 @@ class SearchEngineBase:
     QUERY_DELETE_DOC = ""
     QUERY_SELECT = ""
 
-    def __init__(self, prefix: str | None = None) -> None:
-        self.prefix = prefix
+    def __init__(self, name: str) -> None:
+        if not name:
+            raise ValueError("Collection name is required!")
+        self.name = name
         self.create_tables()
 
     @contextmanager
@@ -97,7 +99,7 @@ class SearchEngineBase:
             conn.execute(self.QUERY_CREATE_INDEX)
             if self.QUERY_CREATE_DOC:
                 conn.execute(self.QUERY_CREATE_DOC)
-            conn.execute("CREATE INDEX IF NOT EXISTS prefix_idx ON documents (prefix)")
+            conn.execute("CREATE INDEX IF NOT EXISTS name_idx ON documents (name)")
 
     def add(
         self,
@@ -113,15 +115,15 @@ class SearchEngineBase:
             metadatas = [None for _ in contents]
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
-        prefixes = [self.prefix for _ in contents]
-        return self._add(contents, ids, metadatas, prefixes)
+        namees = [self.name for _ in contents]
+        return self._add(contents, ids, metadatas, namees)
 
     def _add(
         self,
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        prefixes: list[str | None],
+        namees: list[str | None],
     ) -> list[str]:
         raise NotImplementedError
 
@@ -151,10 +153,10 @@ class SearchEngineBase:
         with self.conn() as conn:
             try:
                 fts_query = self.QUERY_SEARCH
-                if self.prefix is None:
-                    fts_query += " AND prefix IS NULL"
+                if self.name is None:
+                    fts_query += " AND name IS NULL"
                 else:
-                    fts_query += f" AND prefix = '{self.prefix}'"
+                    fts_query += f" AND name = '{self.name}'"
 
                 backend = "postgresql" if self.IS_POSTGRES else "sqlite"
                 query_string = str(QueryParser(query_string, backend=backend))
@@ -243,10 +245,10 @@ class SearchEngineBase:
                 query = self.QUERY_SELECT
             else:
                 query = "SELECT id, metadata FROM documents"
-            if self.prefix is None:
-                query += " WHERE prefix IS NULL"
+            if self.name is None:
+                query += " WHERE name IS NULL"
             else:
-                query += f" WHERE prefix = '{self.prefix}'"
+                query += f" WHERE name = '{self.name}'"
             result = conn.execute(query)
             if self.IS_POSTGRES:
                 result = conn.fetchall()
@@ -265,10 +267,10 @@ class SearchEngineBase:
 
     def delete_all(self) -> None:
         """Delete all documents."""
-        if self.prefix is None:
-            where = "WHERE doc.prefix IS NULL"
+        if self.name is None:
+            where = "WHERE doc.name IS NULL"
         else:
-            where = f"WHERE doc.prefix = '{self.prefix}'"
+            where = f"WHERE doc.name = '{self.name}'"
         with self.conn() as conn:
             if not self.IS_POSTGRES:
                 conn.execute(
@@ -283,7 +285,7 @@ class SearchEngineBase:
             conn.execute(f"DELETE FROM documents AS doc {where}")
 
 
-class SearchEngineSQLite(SearchEngineBase):
+class CollectionSQLite(CollectionBase):
 
     QUERY_CREATE_INDEX = (
         "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
@@ -291,16 +293,16 @@ class SearchEngineSQLite(SearchEngineBase):
     QUERY_CREATE_DOC = """
         CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
-            prefix TEXT,
+            name TEXT,
             metadata JSON
         );
         """
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
     QUERY_INSERT_DOC = """INSERT INTO documents
-            (id, metadata, prefix) VALUES (?, ?, ?)
+            (id, metadata, name) VALUES (?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 metadata = excluded.metadata,
-                prefix = excluded.prefix
+                name = excluded.name
             """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
@@ -323,9 +325,9 @@ class SearchEngineSQLite(SearchEngineBase):
                     ON doc.id = fts.id
                 """
 
-    def __init__(self, db_path="search_engine.db", prefix: str | None = None) -> None:
+    def __init__(self, db_path="search_engine.db", name: str | None = None) -> None:
         self.db_path = db_path
-        super().__init__(prefix=prefix)
+        super().__init__(name=name)
 
     @contextmanager
     def conn(self):
@@ -343,10 +345,10 @@ class SearchEngineSQLite(SearchEngineBase):
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        prefixes: list[str | None],
+        namees: list[str | None],
     ) -> list[str]:
         with self.conn() as conn:
-            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, prefixes)))
+            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, namees)))
 
             conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
             conn.executemany(
@@ -360,19 +362,19 @@ class SearchEngineSQLite(SearchEngineBase):
         return ids
 
 
-class SearchEnginePostgreSQL(SearchEngineBase):
+class CollectionPostgreSQL(CollectionBase):
 
     IS_POSTGRES = True
     QUERY_CREATE_INDEX = """
         CREATE TABLE IF NOT EXISTS documents (
             id TEXT PRIMARY KEY,
             content TEXT,
-            prefix TEXT,
+            name TEXT,
             metadata JSONB,
             tsvector TSVECTOR
         );
         CREATE INDEX IF NOT EXISTS documents_tsvector_idx ON documents USING GIN (tsvector);
-        CREATE INDEX IF NOT EXISTS prefix_idx ON documents (prefix);
+        CREATE INDEX IF NOT EXISTS name_idx ON documents (name);
 
         CREATE OR REPLACE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
         ON documents FOR EACH ROW EXECUTE FUNCTION
@@ -381,11 +383,11 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     QUERY_CREATE_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_INSERT_DOC = """INSERT INTO documents
-        (content, id, metadata, prefix) VALUES %s
+        (content, id, metadata, name) VALUES %s
         ON CONFLICT(id) DO UPDATE SET
             content = EXCLUDED.content,
             metadata = EXCLUDED.metadata,
-            prefix = EXCLUDED.prefix
+            name = EXCLUDED.name
     """
 
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
@@ -409,10 +411,10 @@ class SearchEnginePostgreSQL(SearchEngineBase):
     def __init__(
         self,
         dsn,
-        prefix: str | None = None,
+        name: str | None = None,
     ) -> None:
         self.dsn = dsn
-        super().__init__(prefix=prefix)
+        super().__init__(name=name)
 
     @contextmanager
     def conn(self):
@@ -430,13 +432,13 @@ class SearchEnginePostgreSQL(SearchEngineBase):
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        prefixes: list[str | None],
+        namees: list[str | None],
     ) -> list[str]:
         with self.conn() as conn:
             psycopg2.extras.execute_values(
                 conn,
                 self.QUERY_INSERT_DOC,
-                list(zip(contents, ids, metadatas, prefixes)),
+                list(zip(contents, ids, metadatas, namees)),
             )
         return ids
 
@@ -453,10 +455,10 @@ def db_url_to_dsn(db_url: str) -> str:
     return dsn
 
 
-def SearchEngine(db_url: str, prefix: str | None = None) -> SearchEngineBase:
+def Collection(db_url: str, name: str | None = None) -> CollectionBase:
     """Constructor for search engine instance."""
     if not db_url:
-        return SearchEngineSQLite(prefix=prefix)
+        return CollectionSQLite(name=name)
     if db_url.startswith("sqlite:///"):
-        return SearchEngineSQLite(db_path=db_url[10:], prefix=prefix)
-    return SearchEnginePostgreSQL(dsn=db_url_to_dsn(db_url))
+        return CollectionSQLite(db_path=db_url[10:], name=name)
+    return CollectionPostgreSQL(dsn=db_url_to_dsn(db_url))

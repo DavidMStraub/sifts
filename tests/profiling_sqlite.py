@@ -121,10 +121,10 @@ def run_timing():
     path = tmp_dir / "search_engine.db"
 
     with timer("Create database table"):
-        Collection(f"sqlite:///{path}", prefix="123")
+        Collection(f"sqlite:///{path}", name="123")
 
     with timer("Instantiate again"):
-        engine = Collection(f"sqlite:///{path}", prefix="123")
+        engine = Collection(f"sqlite:///{path}", name="123")
 
     run_add_update_delete(engine)
     shutil.rmtree(tmp_dir)
