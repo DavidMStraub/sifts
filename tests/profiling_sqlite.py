@@ -136,6 +136,9 @@ def run_add_update_delete(engine, n=100000):
     N = n
     random.seed(711)
 
+    with timer("Count on empty"):
+        engine.count()
+
     with timer("Create random documents"):
         contents = [get_document() for _ in range(N)]
 
@@ -153,6 +156,9 @@ def run_add_update_delete(engine, n=100000):
 
     with timer("Retrieve content"):
         engine.all_documents(content=True)
+
+    with timer("Count on full"):
+        engine.count()
 
     with timer("Delete documents"):
         engine.delete_all()

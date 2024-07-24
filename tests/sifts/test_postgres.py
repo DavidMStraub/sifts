@@ -63,8 +63,10 @@ def search_engine_2():
 
 def test_add_document(postgres_service, search_engine):
     content = ["test content"]
+    assert search_engine.count() == 0
     ids = search_engine.add(content)
     assert len(ids) == 1
+    assert search_engine.count() == 1
 
 
 def test_query_document(postgres_service, search_engine):
@@ -90,8 +92,11 @@ def test_update_document(postgres_service, search_engine):
 
 def test_delete_document(postgres_service, search_engine):
     content = ["content to delete"]
+    assert search_engine.count() == 0
     ids = search_engine.add(content)
+    assert search_engine.count() == 1
     search_engine.delete(ids)
+    assert search_engine.count() == 0
     results = search_engine.query("delete")
     assert results["total"] == 0
     assert len(results["results"]) == 0

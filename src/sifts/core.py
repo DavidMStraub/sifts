@@ -82,10 +82,14 @@ class CollectionBase:
     QUERY_DELETE_INDEX = ""
     QUERY_DELETE_DOC = ""
     QUERY_SELECT = ""
+    QUERY_COUNT = ""
 
     def __init__(self, name: str) -> None:
+        """Initialize collection given a name (cumpulsory)."""
         if not name:
             raise ValueError("Collection name is required!")
+        if not re.fullmatch(r"[-a-zA-Z0-9_\\+~#=/]+", name):
+            raise ValueError("Invalid collection name!")
         self.name = name
         self.create_tables()
 
@@ -95,11 +99,24 @@ class CollectionBase:
         raise NotImplementedError
 
     def create_tables(self) -> None:
+        """Create the database tables if they don't exist yet."""
         with self.conn() as conn:
             conn.execute(self.QUERY_CREATE_INDEX)
             if self.QUERY_CREATE_DOC:
                 conn.execute(self.QUERY_CREATE_DOC)
             conn.execute("CREATE INDEX IF NOT EXISTS name_idx ON documents (name)")
+
+    def count(self) -> int:
+        """Return the number of items in the collection."""
+        with self.conn() as conn:
+            cursor = conn.execute(self.QUERY_COUNT, (self.name,))
+            if self.IS_POSTGRES:
+                result = conn.fetchone()
+            else:
+                result = cursor.fetchone()
+            if not result:
+                return 0
+            return result[0]
 
     def add(
         self,
@@ -107,6 +124,7 @@ class CollectionBase:
         ids: list[str | None] | None = None,
         metadatas: list[dict[str, str] | None] | None = None,
     ) -> list[str]:
+        """Add one or more documents to the collection."""
         if ids is None:
             ids = [make_id() for _ in contents]
         else:
@@ -125,6 +143,7 @@ class CollectionBase:
         metadatas: list[str | None],
         namees: list[str | None],
     ) -> list[str]:
+        """Add one or more documents to the collection."""
         raise NotImplementedError
 
     def update(
@@ -133,11 +152,13 @@ class CollectionBase:
         contents: list[str],
         metadatas: list[dict[str, str] | None] | None = None,
     ) -> list[str]:
+        """Update one or more documents."""
         if ids is None or any([i is None for i in ids]):
             raise ValueError("ids must be specified for update")
         return self.add(contents=contents, ids=ids, metadatas=metadatas)
 
     def delete(self, ids: list[str]) -> None:
+        """Delete one or more documents."""
         with self.conn() as conn:
             conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in ids])
             conn.executemany(self.QUERY_DELETE_DOC, [(did,) for did in ids])
@@ -150,6 +171,7 @@ class CollectionBase:
         where: dict | None = None,
         order_by: str | None = None,
     ) -> QueryResult:
+        """Query the collection."""
         with self.conn() as conn:
             try:
                 fts_query = self.QUERY_SEARCH
@@ -315,6 +337,7 @@ class CollectionSQLite(CollectionBase):
                     INNER JOIN documents_fts fts
                     ON doc.id = fts.id
                 """
+    QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = (?)"
 
     def __init__(self, db_path="search_engine.db", name: str | None = None) -> None:
         self.db_path = db_path
@@ -338,6 +361,7 @@ class CollectionSQLite(CollectionBase):
         metadatas: list[str | None],
         namees: list[str | None],
     ) -> list[str]:
+        """Add one or more documents to the collection."""
         with self.conn() as conn:
             conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, namees)))
 
@@ -398,6 +422,7 @@ class CollectionPostgreSQL(CollectionBase):
     QUERY_LIMIT = " LIMIT %s"
     QUERY_OFFSET = " OFFSET %s"
     QUERY_SELECT = "SELECT id, metadata, content FROM documents"
+    QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = %s"
 
     def __init__(
         self,
@@ -425,6 +450,7 @@ class CollectionPostgreSQL(CollectionBase):
         metadatas: list[str | None],
         namees: list[str | None],
     ) -> list[str]:
+        """Add one or more documents to the collection."""
         with self.conn() as conn:
             psycopg2.extras.execute_values(
                 conn,

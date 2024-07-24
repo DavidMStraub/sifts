@@ -23,10 +23,24 @@ def test_init(tmp_path):
     assert cursor.fetchone() is not None
 
 
+def test_collection_names(tmp_path):
+    path = tmp_path / "search_engine.db"
+    with pytest.raises(ValueError):
+        CollectionSQLite(path, name="1 2")
+    with pytest.raises(ValueError):
+        CollectionSQLite(path, name=" abc")
+    CollectionSQLite(path, name="1+2")
+    CollectionSQLite(path, name="1-2")
+    CollectionSQLite(path, name="ab/c")
+    CollectionSQLite(path, name="abc")
+
+
 def test_add(tmp_path):
     path = tmp_path / "search_engine.db"
     search = CollectionSQLite(path, name="123")
     assert search.query("Lorem") == {"results": [], "total": 0}
+    # assert search.count() == 0
+    search.count()
     ids1 = search.add(["Lorem ipsum dolor"])
     ids2 = search.add(["sit amet"])
     assert len(search.query("Lorem")["results"]) == 1
@@ -34,6 +48,8 @@ def test_add(tmp_path):
     assert len(search.query("am*")["results"]) == 1
     assert search.query("am*")["results"][0]["id"] == ids2[0]
     assert len(search.query("Lorem or amet")["results"]) == 2
+    # assert search.count() == 2
+    search.count()
 
 
 def test_query_multiple(tmp_path):
@@ -98,12 +114,15 @@ def test_update(tmp_path):
 def test_delete(tmp_path):
     path = tmp_path / "search_engine.db"
     search = CollectionSQLite(path, name="123")
+    search.count()
     ids = search.add(["Lorem ipsum", "Lorem dolor"])
     res = search.query("Lorem")
     assert len(res["results"]) == 2
+    search.count()
     search.delete(ids)
     res = search.query("Lorem")
     assert len(res["results"]) == 0
+    search.count()
     search.delete(ids)
 
 
