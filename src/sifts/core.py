@@ -188,7 +188,15 @@ class CollectionBase:
                 if where:
                     for key, value in where.items():
                         if isinstance(value, dict):
-                            if "$in" not in value and "$nin" not in value:
+                            if not set(value.keys()) & {
+                                "$in",
+                                "$nin",
+                                "$gt",
+                                "$lt",
+                                "$gte",
+                                "$lte",
+                                "$eq",
+                            }:
                                 raise ValueError("Invalid where condition")
                             if "$in" in value:
                                 values = [str(val) for val in value["$in"]]
@@ -196,7 +204,8 @@ class CollectionBase:
                                 fts_query += " AND " + self.QUERY_FILTER_META_IN.format(
                                     key, placeholders
                                 )
-                            else:
+                                params += values
+                            if "$nin" in value:
                                 values = [str(val) for val in value["$nin"]]
                                 placeholders = ",".join("?" for _ in values)
                                 fts_query += (
@@ -205,10 +214,27 @@ class CollectionBase:
                                         key, placeholders
                                     )
                                 )
-                            params += values
+                                params += values
+
+                            ops = {
+                                "$gt": ">",
+                                "$lt": "<",
+                                "$gte": ">=",
+                                "$lte": "<=",
+                                "$eq": "=",
+                            }
+                            for op in value:
+                                if op in ops:
+                                    fts_query += (
+                                        " AND "
+                                        + self.QUERY_FILTER_META.format(key, ops[op])
+                                    )
+                                    params.append(value[op])
 
                         else:
-                            fts_query += " AND " + self.QUERY_FILTER_META.format(key)
+                            fts_query += " AND " + self.QUERY_FILTER_META.format(
+                                key, "="
+                            )
                             params.append(value)
 
                 if order_by:
@@ -326,7 +352,7 @@ class CollectionSQLite(CollectionBase):
                 JOIN documents doc ON doc.id = fts.id
                 WHERE TRUE
                 """
-    QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") = (?)'
+    QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") {} (?)'
     QUERY_FILTER_META_IN = 'json_extract(doc.metadata, "$.{}") IN ({})'
     QUERY_FILTER_META_NOT_IN = 'json_extract(doc.metadata, "$.{}") NOT IN ({})'
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
@@ -415,7 +441,7 @@ class CollectionPostgreSQL(CollectionBase):
     FROM documents
     WHERE TRUE
     """
-    QUERY_FILTER_META = "metadata->>'{}' = %s"
+    QUERY_FILTER_META = "metadata->>'{}' {} %s"
     QUERY_FILTER_META_IN = "metadata->>'{}' IN ({})"
     QUERY_FILTER_META_NOT_IN = "metadata->>'{}' NOT IN ({})"
     QUERY_ORDER_META = "metadata->>'{}'"

@@ -152,10 +152,10 @@ def run_add_update_delete(engine, n=100000):
         engine.add(contents, ids, metadatas)
 
     with timer("Retrieve metadata"):
-        engine.all_documents(content=False)
+        engine.get()
 
-    with timer("Retrieve content"):
-        engine.all_documents(content=True)
+    with timer("Get all"):
+        engine.get()
 
     with timer("Count on full"):
         engine.count()

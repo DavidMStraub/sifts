@@ -238,6 +238,18 @@ def test_query_where(tmp_path):
     assert res["total"] == 3
     res = res["results"]
     assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$eq": "a"}}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$gt": "a"}}, order_by="k1")
+    assert res["total"] == 6
+    res = res["results"]
+    assert len(res) == 6
+    res = search.query("Lorem", where={"k2": {"$lt": "a"}}, order_by="k1")
+    assert res["total"] == 0
+    res = res["results"]
+    assert len(res) == 0
 
 
 def test_query_where_in(tmp_path):

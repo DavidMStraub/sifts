@@ -268,6 +268,18 @@ def test_query_where(postgres_service, search_engine):
     search.add(["Lorem"], ids=["i0"])
     res = search.query("Lorem", where={"k2": "a"}, order_by="k1")
     assert len(res["results"]) == 3
+    res = search.query("Lorem", where={"k2": {"$eq": "a"}}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$gt": "a"}}, order_by="k1")
+    assert res["total"] == 6
+    res = res["results"]
+    assert len(res) == 6
+    res = search.query("Lorem", where={"k2": {"$lt": "a"}}, order_by="k1")
+    assert res["total"] == 0
+    res = res["results"]
+    assert len(res) == 0
 
 
 def test_all_docs(postgres_service, search_engine):
