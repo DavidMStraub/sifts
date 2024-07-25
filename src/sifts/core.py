@@ -73,6 +73,7 @@ class CollectionBase:
     QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_SEARCH = ""
+    QUERY_GET = ""
     QUERY_FILTER_META = ""
     QUERY_FILTER_META_IN = ""
     QUERY_FILTER_META_NOT_IN = ""
@@ -81,7 +82,6 @@ class CollectionBase:
     QUERY_OFFSET = ""
     QUERY_DELETE_INDEX = ""
     QUERY_DELETE_DOC = ""
-    QUERY_SELECT = ""
     QUERY_COUNT = ""
 
     def __init__(self, name: str) -> None:
@@ -174,12 +174,16 @@ class CollectionBase:
         """Query the collection."""
         with self.conn() as conn:
             try:
-                fts_query = self.QUERY_SEARCH
-                fts_query += f" AND name = '{self.name}'"
+                if query_string:
+                    fts_query = self.QUERY_SEARCH
+                    backend = "postgresql" if self.IS_POSTGRES else "sqlite"
+                    query_string = str(QueryParser(query_string, backend=backend))
+                    params = [query_string]
+                else:
+                    fts_query = self.QUERY_GET
+                    params = []
 
-                backend = "postgresql" if self.IS_POSTGRES else "sqlite"
-                query_string = str(QueryParser(query_string, backend=backend))
-                params = [query_string]
+                fts_query += f" AND name = '{self.name}'"
 
                 if where:
                     for key, value in where.items():
@@ -230,7 +234,9 @@ class CollectionBase:
                 if offset:
                     fts_query += self.QUERY_OFFSET
                     params.append(str(int(offset)))
+
                 result = conn.execute(fts_query, params) or []
+
                 if self.IS_POSTGRES:
                     result = conn.fetchall()
                 else:
@@ -238,18 +244,18 @@ class CollectionBase:
                 if not result:
                     n_tot = 0
                 else:
-                    n_tot = result[0][4]
+                    n_tot = result[0][0]
 
                 result = [
                     {
-                        "id": match[0],
-                        "rank": match[1],
+                        "id": match[1],
                         "content": match[2],
                         "metadata": (
                             match[3]
                             if self.IS_POSTGRES
                             else json.loads(match[3] or "null")
                         ),
+                        **({"rank": match[4]} if len(match) == 5 else {}),
                     }
                     for match in result
                 ]
@@ -257,29 +263,17 @@ class CollectionBase:
                 return {"total": 0, "results": []}
         return {"total": n_tot, "results": result}
 
-    def all_documents(self, content: bool = False):
-        """Return all documents."""
-        with self.conn() as conn:
-            if content:
-                query = self.QUERY_SELECT
-            else:
-                query = "SELECT id, metadata FROM documents"
-            query += f" WHERE name = '{self.name}'"
-            result = conn.execute(query)
-            if self.IS_POSTGRES:
-                result = conn.fetchall()
-
-            result = [
-                {
-                    "id": match[0],
-                    "metadata": (
-                        match[1] if self.IS_POSTGRES else json.loads(match[1] or "null")
-                    ),
-                    "content": match[2] if len(match) > 2 else None,
-                }
-                for match in result
-            ]
-        return result
+    def get(
+        self,
+        limit: int = 0,
+        offset: int = 0,
+        where: dict | None = None,
+        order_by: str | None = None,
+    ) -> QueryResult:
+        """Get documents from the collection without searching."""
+        return self.query(
+            query_string="", limit=limit, offset=offset, where=where, order_by=order_by
+        )
 
     def delete_all(self) -> None:
         """Delete all documents."""
@@ -319,11 +313,18 @@ class CollectionSQLite(CollectionBase):
             """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
-    QUERY_SEARCH = """SELECT doc.id, fts.rank, fts.content, doc.metadata,
-                count(*) OVER() AS full_count
+    QUERY_SEARCH = """SELECT count(*) OVER() AS full_count,
+                doc.id, fts.content, doc.metadata,
+                fts.rank
                 FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
                 WHERE fts.content MATCH (?)
+                """
+    QUERY_GET = """SELECT count(*) OVER() AS full_count,
+                doc.id, fts.content, doc.metadata
+                FROM documents_fts fts
+                JOIN documents doc ON doc.id = fts.id
+                WHERE TRUE
                 """
     QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") = (?)'
     QUERY_FILTER_META_IN = 'json_extract(doc.metadata, "$.{}") IN ({})'
@@ -331,12 +332,6 @@ class CollectionSQLite(CollectionBase):
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
     QUERY_LIMIT = " LIMIT (?)"
     QUERY_OFFSET = " OFFSET (?)"
-    QUERY_SELECT = """
-                    SELECT doc.id, doc.metadata, fts.content
-                    FROM documents doc
-                    INNER JOIN documents_fts fts
-                    ON doc.id = fts.id
-                """
     QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = (?)"
 
     def __init__(self, db_path="search_engine.db", name: str | None = None) -> None:
@@ -407,21 +402,25 @@ class CollectionPostgreSQL(CollectionBase):
 
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = %s"
-
     QUERY_SEARCH = """
-    SELECT id, ts_rank(tsvector, query) AS rank, content, metadata,
-    count(*) OVER() AS full_count
+    SELECT count(*) OVER() AS full_count,
+    id, content, metadata,
+    ts_rank(tsvector, query) AS rank
     FROM documents, to_tsquery('simple', %s) query
     WHERE tsvector @@ query
     """
-
+    QUERY_GET = """
+    SELECT count(*) OVER() AS full_count,
+    id, content, metadata    
+    FROM documents
+    WHERE TRUE
+    """
     QUERY_FILTER_META = "metadata->>'{}' = %s"
     QUERY_FILTER_META_IN = "metadata->>'{}' IN ({})"
     QUERY_FILTER_META_NOT_IN = "metadata->>'{}' NOT IN ({})"
     QUERY_ORDER_META = "metadata->>'{}'"
     QUERY_LIMIT = " LIMIT %s"
     QUERY_OFFSET = " OFFSET %s"
-    QUERY_SELECT = "SELECT id, metadata, content FROM documents"
     QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = %s"
 
     def __init__(

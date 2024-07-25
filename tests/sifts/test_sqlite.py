@@ -277,3 +277,6 @@ def test_all_docs(tmp_path):
     search = CollectionSQLite(path, name="123")
     search.add(["Lorem ipsum dolor"])
     search.add(["sit amet"])
+    res = search.get()
+    assert len(res["results"]) == 2
+    assert res["total"] == 2
