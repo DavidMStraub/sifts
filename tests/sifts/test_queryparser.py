@@ -36,6 +36,11 @@ def test_and_postgres():
     assert str(QueryParser(query, backend="postgresql")) == "Lorem & ipsum"
 
 
+def test_and_postgres_upper():
+    query = "Lorem AND ipsum"
+    assert str(QueryParser(query, backend="postgresql")) == "Lorem & ipsum"
+
+
 def test_or_postgres():
     query = "Lorem or ipsum"
     assert str(QueryParser(query, backend="postgresql")) == "Lorem | ipsum"

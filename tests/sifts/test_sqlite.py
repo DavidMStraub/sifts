@@ -252,6 +252,37 @@ def test_query_where(tmp_path):
     assert len(res) == 0
 
 
+def test_query_where_num(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": 1, "k2": 3}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": 2, "k2": 3}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": 3, "k2": 3}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": 4, "k2": 2}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": 5, "k2": 2}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": 6, "k2": 2}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": 7, "k2": 1}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": 8, "k2": 1}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": 9, "k2": 1}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem", where={"k2": 1}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$eq": 1}}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$gt": 1}}, order_by="k1")
+    assert res["total"] == 6
+    res = res["results"]
+    assert len(res) == 6
+    res = search.query("Lorem", where={"k2": {"$lt": 1}}, order_by="k1")
+    assert res["total"] == 0
+    res = res["results"]
+    assert len(res) == 0
+
+
 def test_query_where_in(tmp_path):
     path = tmp_path / "search_engine.db"
     search = CollectionSQLite(path, name="123")

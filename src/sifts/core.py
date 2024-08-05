@@ -44,12 +44,12 @@ class QueryParser:
         query_list = []
         i = 0
         while i < len(words):
-            if words[i] in operators:
+            if words[i].lower() in operators:
                 query_list.append(words[i])
                 i += 1
             else:
                 query_list.append(words[i])
-                if i + 1 < len(words) and words[i + 1] not in operators:
+                if i + 1 < len(words) and words[i + 1].lower() not in operators:
                     query_list.append("&")
                 i += 1
         query = " ".join(query_list)
@@ -75,6 +75,7 @@ class CollectionBase:
     QUERY_SEARCH = ""
     QUERY_GET = ""
     QUERY_FILTER_META = ""
+    QUERY_FILTER_META_FLOAT = ""
     QUERY_FILTER_META_IN = ""
     QUERY_FILTER_META_NOT_IN = ""
     QUERY_ORDER_META = ""
@@ -229,17 +230,35 @@ class CollectionBase:
                             }
                             for op in value:
                                 if op in ops:
-                                    fts_query += (
-                                        " AND "
-                                        + self.QUERY_FILTER_META.format(key, ops[op])
-                                    )
-                                    params.append(value[op])
+                                    if isinstance(value[op], (float, int)):
+                                        fts_query += (
+                                            " AND "
+                                            + self.QUERY_FILTER_META_FLOAT.format(
+                                                key, ops[op]
+                                            )
+                                        )
+                                        params.append(value[op])
+                                    else:
+                                        fts_query += (
+                                            " AND "
+                                            + self.QUERY_FILTER_META.format(
+                                                key, ops[op]
+                                            )
+                                        )
+                                        params.append(str(value[op]))
 
                         else:
-                            fts_query += " AND " + self.QUERY_FILTER_META.format(
-                                key, "="
-                            )
-                            params.append(value)
+                            if isinstance(value, (float, int)):
+                                fts_query += (
+                                    " AND "
+                                    + self.QUERY_FILTER_META_FLOAT.format(key, "=")
+                                )
+                                params.append(value)
+                            else:
+                                fts_query += " AND " + self.QUERY_FILTER_META.format(
+                                    key, "="
+                                )
+                                params.append(str(value))
 
                 if order_by:
                     fts_query += " ORDER BY "
@@ -357,6 +376,7 @@ class CollectionSQLite(CollectionBase):
                 WHERE TRUE
                 """
     QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") {} (?)'
+    QUERY_FILTER_META_FLOAT = QUERY_FILTER_META
     QUERY_FILTER_META_IN = 'json_extract(doc.metadata, "$.{}") IN ({})'
     QUERY_FILTER_META_NOT_IN = 'json_extract(doc.metadata, "$.{}") NOT IN ({})'
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
@@ -446,6 +466,7 @@ class CollectionPostgreSQL(CollectionBase):
     WHERE TRUE
     """
     QUERY_FILTER_META = "metadata->>'{}' {} %s"
+    QUERY_FILTER_META_FLOAT = "(metadata->>'{}')::double precision {} %s"
     QUERY_FILTER_META_IN = "metadata->>'{}' IN ({})"
     QUERY_FILTER_META_NOT_IN = "metadata->>'{}' NOT IN ({})"
     QUERY_ORDER_META = "metadata->>'{}'"
