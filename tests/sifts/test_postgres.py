@@ -282,6 +282,37 @@ def test_query_where(postgres_service, search_engine):
     assert len(res) == 0
 
 
+def test_query_where_in(postgres_service, search_engine):
+    search = search_engine
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    with pytest.raises(ValueError):
+        # wrong operator
+        search.query("Lorem", where={"k1": {"in": "a"}})
+    res = search.query(
+        "Lorem", where={"k1": {"$in": ["a", "b", "c", "d"]}}, order_by="k1"
+    )
+    assert res["total"] == 4
+    res = res["results"]
+    assert len(res) == 4
+    assert [r["id"][1:] for r in res] == list("1234")
+    res = search.query(
+        "Lorem", where={"k1": {"$nin": ["a", "b", "c", "d"]}}, order_by="k1"
+    )
+    assert res["total"] == 5
+    res = res["results"]
+    assert len(res) == 5
+    assert [r["id"][1:] for r in res] == list("56789")
+
+
 def test_all_docs(postgres_service, search_engine):
     search = search_engine
     search.add(["Lorem ipsum dolor"])

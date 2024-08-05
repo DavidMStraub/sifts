@@ -200,14 +200,18 @@ class CollectionBase:
                                 raise ValueError("Invalid where condition")
                             if "$in" in value:
                                 values = [str(val) for val in value["$in"]]
-                                placeholders = ",".join("?" for _ in values)
+                                placeholders = ",".join(
+                                    "%s" if self.IS_POSTGRES else "?" for _ in values
+                                )
                                 fts_query += " AND " + self.QUERY_FILTER_META_IN.format(
                                     key, placeholders
                                 )
                                 params += values
                             if "$nin" in value:
                                 values = [str(val) for val in value["$nin"]]
-                                placeholders = ",".join("?" for _ in values)
+                                placeholders = ",".join(
+                                    "%s" if self.IS_POSTGRES else "?" for _ in values
+                                )
                                 fts_query += (
                                     " AND "
                                     + self.QUERY_FILTER_META_NOT_IN.format(
