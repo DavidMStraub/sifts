@@ -365,3 +365,15 @@ def test_vector_query(tmp_path):
     assert res["results"][0]["rank"] == pytest.approx(1 / 3)
     assert res["results"][1]["content"] == "Lorem ipsum dolor"
     assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    # limit & offset
+    res = search.query("consectetur", vector_search=True, offset=0, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "sit amet"
+    res = search.query("consectetur", vector_search=True, offset=1, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
+    res = search.query("consectetur", vector_search=True, offset=2)
+    assert res["total"] == 2
+    assert len(res["results"]) == 0

@@ -327,12 +327,17 @@ class CollectionBase:
                     fts_query += " ORDER BY embedding <=> %s"
                     params += [vector]
 
-                if limit:
-                    fts_query += self.QUERY_LIMIT
-                    params.append(str(int(limit)))
-                if offset:
-                    fts_query += self.QUERY_OFFSET
-                    params.append(str(int(offset)))
+                if vector_search and not self.IS_POSTGRES:
+                    # we can't directly apply limit and offset in SQLite vector search
+                    # since we need to do it manually
+                    pass
+                else:
+                    if limit:
+                        fts_query += self.QUERY_LIMIT
+                        params.append(str(int(limit)))
+                    if offset:
+                        fts_query += self.QUERY_OFFSET
+                        params.append(str(int(offset)))
 
                 result = conn.execute(fts_query, params) or []
 
@@ -361,10 +366,10 @@ class CollectionBase:
             except (sqlite3.OperationalError, psycopg2.OperationalError):
                 return {"total": 0, "results": []}
             if vector_search and not self.IS_POSTGRES:
-                result = self._order_result(result, vector)
+                result = self._order_result(result, vector, limit, offset)
         return {"total": n_tot, "results": result}
 
-    def _order_result(self, result):
+    def _order_result(self, result, limit, offset):
         """Order the result by vector similarity."""
         return result
 
@@ -498,7 +503,7 @@ class CollectionSQLite(CollectionBase):
             conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
         return ids
 
-    def _order_result(self, result, vector):
+    def _order_result(self, result, vector, limit, offset):
         """Order the result by vector similarity."""
         vectors = np.array(
             [np.frombuffer(res.pop("rank"), dtype=float) for res in result]
@@ -508,6 +513,10 @@ class CollectionSQLite(CollectionBase):
         similarities = vector @ vectors.T / vectors_norm / vector_norm
         pos = np.argsort(-similarities)
         result = [{**result[i], "rank": similarities[i]} for i in pos]
+        if offset:
+            result = result[offset:]
+        if limit:
+            result = result[:limit]
         return result
 
 
