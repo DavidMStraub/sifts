@@ -354,3 +354,21 @@ def test_instantiate_twice(postgres_service, search_engine):
     search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="my_name")
     res = search.get()
     assert len(res["results"]) == 1
+
+
+def test_vector(postgres_service, search_engine):
+    vectors = {"Lorem ipsum dolor": [0.0, 0.0, 0.0], "sit amet": [0, 0.5, 0]}
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    with search.conn() as conn:
+        conn.execute("SELECT embedding FROM documents")
+        vectors = conn.fetchall()
+        vectors = [v[0] for v in vectors]
+        assert len(vectors) == 2
+        assert isinstance(vectors[0], str)
+        assert vectors[0] == "[0,0,0]"
+        assert vectors[1] == "[0,0.5,0]"

@@ -3,6 +3,7 @@
 import os
 import sqlite3
 
+import numpy as np
 import pytest
 from sifts.core import CollectionSQLite
 
@@ -323,3 +324,22 @@ def test_all_docs(tmp_path):
     res = search.get()
     assert len(res["results"]) == 2
     assert res["total"] == 2
+
+
+def test_vector_add(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {"Lorem ipsum dolor": [0, 0, 0], "sit amet": [0, 0.5, 0]}
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    with search.conn() as conn:
+        res = conn.execute("SELECT embedding FROM documents")
+        vectors = res.fetchall()
+        vectors = [np.frombuffer(v[0], dtype=float) for v in vectors]
+        assert len(vectors) == 2
+        assert isinstance(vectors[0], np.ndarray)
+        assert vectors[0].tolist() == [0, 0, 0]
+        assert vectors[1].tolist() == [0, 0.5, 0]

@@ -5,9 +5,11 @@ import json
 import re
 import sqlite3
 import uuid
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
+import numpy as np
 import psycopg2
+import psycopg2.errors
 import psycopg2.extras
 from urllib.parse import urlparse
 from contextlib import contextmanager
@@ -81,15 +83,16 @@ class CollectionBase:
     QUERY_OFFSET = ""
     QUERY_DELETE_INDEX = ""
     QUERY_DELETE_DOC = ""
-    QUERY_COUNT = ""
+    PLACEHOLDER = "(?)"
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, embedding_function: Callable | None = None) -> None:
         """Initialize collection given a name (cumpulsory)."""
         if not name:
             raise ValueError("Collection name is required!")
         if not re.fullmatch(r"[-a-zA-Z0-9_\\+~#=/]+", name):
             raise ValueError("Invalid collection name!")
         self.name = name
+        self.embedding_function = embedding_function
         self.create_tables()
 
     @contextmanager
@@ -102,6 +105,9 @@ class CollectionBase:
         with self.conn() as conn:
             self._create_document_tables(conn)
             conn.execute("CREATE INDEX IF NOT EXISTS name_idx ON documents (name)")
+        if self.embedding_function:
+            with self.conn() as conn:
+                self._create_embedding_column(conn)
 
     def _create_document_tables(self, conn) -> None:
         """Create the database tables if they don't exist yet."""
@@ -114,7 +120,10 @@ class CollectionBase:
     def count(self) -> int:
         """Return the number of items in the collection."""
         with self.conn() as conn:
-            cursor = conn.execute(self.QUERY_COUNT, (self.name,))
+            cursor = conn.execute(
+                f"SELECT count(*) FROM documents WHERE name = {self.PLACEHOLDER}",
+                (self.name,),
+            )
             if self.IS_POSTGRES:
                 result = conn.fetchone()
             else:
@@ -138,18 +147,40 @@ class CollectionBase:
             metadatas = [None for _ in contents]
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
-        namees = [self.name for _ in contents]
-        return self._add(contents, ids, metadatas, namees)
+        names = [self.name for _ in contents]
+        ids = self._add(contents, ids, metadatas, names)
+        if self.embedding_function:
+            self._add_vectors(contents, ids)
+        return ids
 
     def _add(
         self,
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        namees: list[str | None],
+        names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
         raise NotImplementedError
+
+    def _format_vectors(self, vectors):
+        """Format the vectors so they can be inserted in the table."""
+        return [np.asarray(v, dtype=float).tobytes() for v in vectors]
+
+    def _add_vectors(
+        self,
+        contents: list[str],
+        ids: list[str | None],
+    ) -> list[str]:
+        """Add one or more documents to the collection."""
+        with self.conn() as conn:
+            vectors = self.embedding_function(contents)
+            embeddings = self._format_vectors(vectors)
+            conn.executemany(
+                f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE ID = {self.PLACEHOLDER}",
+                list(zip(embeddings, ids)),
+            )
+        return ids
 
     def update(
         self,
@@ -376,11 +407,15 @@ class CollectionSQLite(CollectionBase):
     QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
     QUERY_LIMIT = " LIMIT (?)"
     QUERY_OFFSET = " OFFSET (?)"
-    QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = (?)"
 
-    def __init__(self, db_path="search_engine.db", name: str | None = None) -> None:
+    def __init__(
+        self,
+        db_path="search_engine.db",
+        name: str | None = None,
+        embedding_function: Callable | None = None,
+    ) -> None:
         self.db_path = db_path
-        super().__init__(name=name)
+        super().__init__(name=name, embedding_function=embedding_function)
 
     @contextmanager
     def conn(self):
@@ -408,16 +443,23 @@ class CollectionSQLite(CollectionBase):
         """
         )
 
+    def _create_embedding_column(self, conn) -> None:
+        """Create the embedding column if it doesn't exist yet."""
+        columns = conn.execute("PRAGMA table_info(documents);")
+        column_exists = any(column[1] == "embedding" for column in columns)
+        if not column_exists:
+            conn.execute("ALTER TABLE documents ADD COLUMN embedding BLOB;")
+
     def _add(
         self,
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        namees: list[str | None],
+        names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
         with self.conn() as conn:
-            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, namees)))
+            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, names)))
 
             conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
             conn.executemany(
@@ -465,15 +507,13 @@ class CollectionPostgreSQL(CollectionBase):
     QUERY_ORDER_META = "metadata->>'{}'"
     QUERY_LIMIT = " LIMIT %s"
     QUERY_OFFSET = " OFFSET %s"
-    QUERY_COUNT = "SELECT count(*) FROM documents WHERE name = %s"
+    PLACEHOLDER = "%s"
 
     def __init__(
-        self,
-        dsn,
-        name: str | None = None,
+        self, dsn, name: str | None = None, embedding_function: Callable | None = None
     ) -> None:
         self.dsn = dsn
-        super().__init__(name=name)
+        super().__init__(name=name, embedding_function=embedding_function)
 
     @contextmanager
     def conn(self):
@@ -521,21 +561,44 @@ class CollectionPostgreSQL(CollectionBase):
             """
         )
 
+    def _create_embedding_column(self, conn) -> None:
+        """Create the embedding column if it doesn't exist yet."""
+
+        # before attempting "CREATE EXTENSION", check whether it exists.
+        # otherwise it might fail due to permission error even if it exists
+        conn.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
+        extension_exists = conn.fetchone()
+        if not extension_exists:
+            try:
+                conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            except psycopg2.errors.InsufficientPrivilege as exc:
+                raise exc
+
+        conn.execute("ALTER TABLE documents ADD COLUMN IF NOT EXISTS embedding vector;")
+
     def _add(
         self,
         contents: list[str],
         ids: list[str | None],
         metadatas: list[str | None],
-        namees: list[str | None],
+        names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
         with self.conn() as conn:
             psycopg2.extras.execute_values(
                 conn,
                 self.QUERY_INSERT_DOC,
-                list(zip(contents, ids, metadatas, namees)),
+                list(zip(contents, ids, metadatas, names)),
             )
         return ids
+
+    def _format_vectors(self, vectors):
+        """Format the vectors so they can be inserted in the table."""
+
+        def format_vector(v):
+            return "[" + ",".join([str(float(x)) for x in v]) + "]"
+
+        return [format_vector(v) for v in vectors]
 
 
 def db_url_to_dsn(db_url: str) -> str:

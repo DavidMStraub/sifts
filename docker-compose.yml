@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:latest
+    build: ./docker
     environment:
       POSTGRES_USER: testuser
       POSTGRES_PASSWORD: testpass
