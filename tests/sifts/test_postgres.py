@@ -405,3 +405,21 @@ def test_vector_query(postgres_service, search_engine):
     res = search.query("consectetur", vector_search=True, offset=2)
     assert res["total"] == 0
     assert len(res["results"]) == 0
+
+
+def test_vector_query_fts(postgres_service, search_engine):
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("Lorem", vector_search=False)
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
