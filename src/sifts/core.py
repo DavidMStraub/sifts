@@ -206,15 +206,26 @@ class CollectionBase:
         offset: int = 0,
         where: dict | None = None,
         order_by: str | None = None,
+        vector_search: bool = False,
     ) -> QueryResult:
         """Query the collection."""
+        if order_by and vector_search:
+            raise ValueError("order_by is not allowed for vector search.")
         with self.conn() as conn:
             try:
+                params = []
                 if query_string:
-                    fts_query = self.QUERY_SEARCH
-                    backend = "postgresql" if self.IS_POSTGRES else "sqlite"
-                    query_string = str(QueryParser(query_string, backend=backend))
-                    params = [query_string]
+                    if vector_search:
+                        vector = self.embedding_function([query_string])[0]
+                        fts_query = self.QUERY_VECTOR_SEARCH
+                        if self.IS_POSTGRES:
+                            vector = self._format_vectors([vector])[0]
+                            params += [vector]
+                    else:
+                        fts_query = self.QUERY_SEARCH
+                        backend = "postgresql" if self.IS_POSTGRES else "sqlite"
+                        query_string = str(QueryParser(query_string, backend=backend))
+                        params += [query_string]
                 else:
                     fts_query = self.QUERY_GET
                     params = []
@@ -312,6 +323,10 @@ class CollectionBase:
                         fts_query += ","
                     fts_query = fts_query.rstrip(",")  # remove last trailing comma
 
+                if vector_search and self.IS_POSTGRES:
+                    fts_query += " ORDER BY embedding <=> %s"
+                    params += [vector]
+
                 if limit:
                     fts_query += self.QUERY_LIMIT
                     params.append(str(int(limit)))
@@ -345,7 +360,13 @@ class CollectionBase:
                 ]
             except (sqlite3.OperationalError, psycopg2.OperationalError):
                 return {"total": 0, "results": []}
+            if vector_search and not self.IS_POSTGRES:
+                result = self._order_result(result, vector)
         return {"total": n_tot, "results": result}
+
+    def _order_result(self, result):
+        """Order the result by vector similarity."""
+        return result
 
     def get(
         self,
@@ -393,6 +414,11 @@ class CollectionSQLite(CollectionBase):
                 FROM documents_fts fts
                 JOIN documents doc ON doc.id = fts.id
                 WHERE fts.content MATCH (?)
+                """
+    QUERY_VECTOR_SEARCH = """SELECT count(*) OVER() AS full_count,
+                doc.id, fts.content, doc.metadata, doc.embedding
+                FROM documents_fts fts
+                JOIN documents doc ON doc.id = fts.id
                 """
     QUERY_GET = """SELECT count(*) OVER() AS full_count,
                 doc.id, fts.content, doc.metadata
@@ -472,6 +498,18 @@ class CollectionSQLite(CollectionBase):
             conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
         return ids
 
+    def _order_result(self, result, vector):
+        """Order the result by vector similarity."""
+        vectors = np.array(
+            [np.frombuffer(res.pop("rank"), dtype=float) for res in result]
+        )
+        vector_norm = np.linalg.norm(vector)
+        vectors_norm = np.linalg.norm(vectors, axis=1)
+        similarities = vector @ vectors.T / vectors_norm / vector_norm
+        pos = np.argsort(-similarities)
+        result = [{**result[i], "rank": similarities[i]} for i in pos]
+        return result
+
 
 class CollectionPostgreSQL(CollectionBase):
 
@@ -493,6 +531,13 @@ class CollectionPostgreSQL(CollectionBase):
     ts_rank(tsvector, query) AS rank
     FROM documents, to_tsquery('simple', %s) query
     WHERE tsvector @@ query
+    """
+    QUERY_VECTOR_SEARCH = """
+    SELECT count(*) OVER() AS full_count,
+    id, content, metadata,
+    1 - (embedding <=> %s)
+    FROM documents
+    WHERE TRUE
     """
     QUERY_GET = """
     SELECT count(*) OVER() AS full_count,
