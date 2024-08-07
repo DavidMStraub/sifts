@@ -350,3 +350,13 @@ def test_all_docs(postgres_service, search_engine):
     res = search.get()
     assert len(res["results"]) == 2
     assert res["total"] == 2
+
+
+def test_instantiate_twice(postgres_service, search_engine):
+    search = search_engine
+    search.add(["Lorem ipsum dolor"])
+    res = search.get()
+    assert len(res["results"]) == 1
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="my_name")
+    res = search.get()
+    assert len(res["results"]) == 1

@@ -68,8 +68,6 @@ class QueryParser:
 class CollectionBase:
 
     IS_POSTGRES = False
-    QUERY_CREATE_INDEX = ""
-    QUERY_CREATE_DOC = ""
     QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_SEARCH = ""
@@ -102,10 +100,16 @@ class CollectionBase:
     def create_tables(self) -> None:
         """Create the database tables if they don't exist yet."""
         with self.conn() as conn:
-            conn.execute(self.QUERY_CREATE_INDEX)
-            if self.QUERY_CREATE_DOC:
-                conn.execute(self.QUERY_CREATE_DOC)
+            self._create_document_tables(conn)
             conn.execute("CREATE INDEX IF NOT EXISTS name_idx ON documents (name)")
+
+    def _create_document_tables(self, conn) -> None:
+        """Create the database tables if they don't exist yet."""
+        raise NotImplementedError
+
+    def _create_embedding_column(self, conn) -> None:
+        """Create the embedding column if it doesn't exist yet."""
+        raise NotImplementedError
 
     def count(self) -> int:
         """Return the number of items in the collection."""
@@ -343,16 +347,6 @@ class CollectionBase:
 
 class CollectionSQLite(CollectionBase):
 
-    QUERY_CREATE_INDEX = (
-        "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
-    )
-    QUERY_CREATE_DOC = """
-        CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            metadata JSON
-        );
-        """
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
     QUERY_INSERT_DOC = """INSERT INTO documents
             (id, metadata, name) VALUES (?, ?, ?)
@@ -399,6 +393,21 @@ class CollectionSQLite(CollectionBase):
         finally:
             conn.close()
 
+    def _create_document_tables(self, conn) -> None:
+        """Create the database tables if they don't exist yet."""
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                metadata JSON
+            );
+        """
+        )
+
     def _add(
         self,
         contents: list[str],
@@ -425,22 +434,6 @@ class CollectionSQLite(CollectionBase):
 class CollectionPostgreSQL(CollectionBase):
 
     IS_POSTGRES = True
-    QUERY_CREATE_INDEX = """
-        CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY,
-            content TEXT,
-            name TEXT,
-            metadata JSONB,
-            tsvector TSVECTOR
-        );
-        CREATE INDEX IF NOT EXISTS documents_tsvector_idx ON documents USING GIN (tsvector);
-        CREATE INDEX IF NOT EXISTS name_idx ON documents (name);
-
-        CREATE OR REPLACE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
-        ON documents FOR EACH ROW EXECUTE FUNCTION
-        tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
-        """
-    QUERY_CREATE_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_INSERT_DOC = """INSERT INTO documents
         (content, id, metadata, name) VALUES %s
@@ -492,6 +485,26 @@ class CollectionPostgreSQL(CollectionBase):
             conn.commit()
         finally:
             conn.close()
+
+    def _create_document_tables(self, conn) -> None:
+        """Create the database tables if they don't exist yet."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                content TEXT,
+                name TEXT,
+                metadata JSONB,
+                tsvector TSVECTOR
+            );
+            CREATE INDEX IF NOT EXISTS documents_tsvector_idx ON documents USING GIN (tsvector);
+            CREATE INDEX IF NOT EXISTS name_idx ON documents (name);
+
+            CREATE OR REPLACE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+            ON documents FOR EACH ROW EXECUTE FUNCTION
+            tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
+        """
+        )
 
     def _add(
         self,
