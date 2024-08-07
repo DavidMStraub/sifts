@@ -499,11 +499,26 @@ class CollectionPostgreSQL(CollectionBase):
             );
             CREATE INDEX IF NOT EXISTS documents_tsvector_idx ON documents USING GIN (tsvector);
             CREATE INDEX IF NOT EXISTS name_idx ON documents (name);
-
-            CREATE OR REPLACE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
-            ON documents FOR EACH ROW EXECUTE FUNCTION
-            tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
         """
+        )
+        # CREATE TRIGGER IF NOT EXISTS
+        conn.execute(
+            """
+            DO $$
+            BEGIN
+                -- Check if the trigger already exists
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_trigger
+                    WHERE tgname = 'tsvectorupdate' AND tgrelid = 'documents'::regclass
+                ) THEN
+                    -- Create the trigger if it does not exist
+                    CREATE TRIGGER tsvectorupdate
+                    BEFORE INSERT OR UPDATE ON documents
+                    FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
+                END IF;
+            END $$;
+            """
         )
 
     def _add(
