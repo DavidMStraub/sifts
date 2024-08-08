@@ -177,7 +177,7 @@ class CollectionBase:
             vectors = self.embedding_function(contents)
             embeddings = self._format_vectors(vectors)
             conn.executemany(
-                f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE ID = {self.PLACEHOLDER}",
+                f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE id = {self.PLACEHOLDER}",
                 list(zip(embeddings, ids)),
             )
         return ids
@@ -211,6 +211,8 @@ class CollectionBase:
         """Query the collection."""
         if order_by and vector_search:
             raise ValueError("order_by is not allowed for vector search.")
+        if vector_search and not self.embedding_function:
+            raise ValueError("vector search not possible without embedding_function.")
         with self.conn() as conn:
             try:
                 params = []
@@ -667,10 +669,16 @@ def db_url_to_dsn(db_url: str) -> str:
     return dsn
 
 
-def Collection(db_url: str, name: str) -> CollectionBase:
+def Collection(
+    db_url: str, name: str, embedding_function: Callable | None = None
+) -> CollectionBase:
     """Constructor for search engine instance."""
     if not db_url:
-        return CollectionSQLite(name=name)
+        return CollectionSQLite(name=name, embedding_function=embedding_function)
     if db_url.startswith("sqlite:///"):
-        return CollectionSQLite(db_path=db_url[10:], name=name)
-    return CollectionPostgreSQL(dsn=db_url_to_dsn(db_url), name=name)
+        return CollectionSQLite(
+            db_path=db_url[10:], name=name, embedding_function=embedding_function
+        )
+    return CollectionPostgreSQL(
+        dsn=db_url_to_dsn(db_url), name=name, embedding_function=embedding_function
+    )
