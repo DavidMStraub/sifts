@@ -84,7 +84,12 @@ class CollectionBase:
     QUERY_DELETE_DOC = ""
     PLACEHOLDER = "(?)"
 
-    def __init__(self, name: str, embedding_function: Callable | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        embedding_function: Callable | None = None,
+        use_fts: bool = True,
+    ) -> None:
         """Initialize collection given a name (cumpulsory)."""
         if not name:
             raise ValueError("Collection name is required!")
@@ -92,6 +97,7 @@ class CollectionBase:
             raise ValueError("Invalid collection name!")
         self.name = name
         self.embedding_function = embedding_function
+        self.use_fts = use_fts
         self.create_tables()
 
     @contextmanager
@@ -195,6 +201,8 @@ class CollectionBase:
             raise ValueError("order_by is not allowed for vector search.")
         if vector_search and not self.embedding_function:
             raise ValueError("vector search not possible without embedding_function.")
+        if query_string and not vector_search and not self.use_fts:
+            raise ValueError("Full-text search not enabled for this collection.")
         with self.conn() as conn:
             try:
                 params = []
@@ -210,6 +218,7 @@ class CollectionBase:
                         backend = "postgresql" if self.IS_POSTGRES else "sqlite"
                         query_string = str(QueryParser(query_string, backend=backend))
                         params += [query_string]
+
                 else:
                     fts_query = self.QUERY_GET
                     params = []
@@ -348,6 +357,7 @@ class CollectionBase:
                     for match in result
                 ]
             except (sqlite3.OperationalError, psycopg2.OperationalError):
+                raise
                 return {"total": 0, "results": []}
             if vector_search and not self.IS_POSTGRES:
                 result = self._order_result(result, vector, limit, offset)
@@ -366,7 +376,11 @@ class CollectionBase:
     ) -> QueryResult:
         """Get documents from the collection without searching."""
         return self.query(
-            query_string="", limit=limit, offset=offset, where=where, order_by=order_by
+            query_string="",
+            limit=limit,
+            offset=offset,
+            where=where,
+            order_by=order_by,
         )
 
     def delete_all(self) -> None:
@@ -399,9 +413,9 @@ class CollectionSQLite(CollectionBase):
                 WHERE fts.content MATCH (?)
                 """
     QUERY_VECTOR_SEARCH = """SELECT count(*) OVER() AS full_count,
-                doc.id, fts.content, doc.metadata, doc.embedding
-                FROM documents_fts fts
-                JOIN documents doc ON doc.id = fts.id
+                doc.id, doc.content, doc.metadata, doc.embedding
+                FROM documents doc
+                WHERE TRUE
                 """
     QUERY_GET = """SELECT count(*) OVER() AS full_count,
                 doc.id, fts.content, doc.metadata
@@ -422,9 +436,12 @@ class CollectionSQLite(CollectionBase):
         db_path="search_engine.db",
         name: str | None = None,
         embedding_function: Callable | None = None,
+        use_fts: bool = True,
     ) -> None:
         self.db_path = db_path
-        super().__init__(name=name, embedding_function=embedding_function)
+        super().__init__(
+            name=name, embedding_function=embedding_function, use_fts=use_fts
+        )
 
     @contextmanager
     def conn(self):
@@ -439,9 +456,10 @@ class CollectionSQLite(CollectionBase):
 
     def _create_document_tables(self, conn) -> None:
         """Create the database tables if they don't exist yet."""
-        conn.execute(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
-        )
+        if self.use_fts:
+            conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(id, content)"
+            )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -449,8 +467,12 @@ class CollectionSQLite(CollectionBase):
                 name TEXT,
                 metadata JSON
             );
-        """
+            """
         )
+        columns = conn.execute("PRAGMA table_info(documents);")
+        column_exists = any(column[1] == "content" for column in columns)
+        if not column_exists:
+            conn.execute("ALTER TABLE documents ADD COLUMN content TEXT;")
 
     def _create_embedding_column(self, conn) -> None:
         """Create the embedding column if it doesn't exist yet."""
@@ -470,27 +492,29 @@ class CollectionSQLite(CollectionBase):
         with self.conn() as conn:
             conn.executemany(
                 """INSERT INTO documents
-            (id, metadata, name) VALUES (?, ?, ?)
+            (id, metadata, name, content) VALUES (?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 metadata = excluded.metadata,
-                name = excluded.name
+                name = excluded.name,
+                content = excluded.content
             """,
-                list(zip(ids, metadatas, names)),
+                list(zip(ids, metadatas, names, contents)),
             )
 
-            conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
-            conn.executemany(
-                "INSERT INTO temp_ids (id) VALUES (?)", [(did,) for did in ids]
-            )
-            conn.execute(
-                "DELETE FROM documents_fts WHERE id IN (SELECT id FROM temp_ids)"
-            )
-            conn.execute("DROP TABLE temp_ids")
-            conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
+            # add/update full-text search index
+            if self.use_fts:
+                conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
+                conn.executemany(
+                    "INSERT INTO temp_ids (id) VALUES (?)", [(did,) for did in ids]
+                )
+                conn.execute(
+                    "DELETE FROM documents_fts WHERE id IN (SELECT id FROM temp_ids)"
+                )
+                conn.execute("DROP TABLE temp_ids")
+                conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
 
-        # add embeddings
-        if self.embedding_function:
-            with self.conn() as conn:
+            # add/update embeddings
+            if self.embedding_function:
                 vectors = self.embedding_function(contents)
                 embeddings = self._format_vectors(vectors)
                 conn.executemany(
@@ -554,10 +578,16 @@ class CollectionPostgreSQL(CollectionBase):
     PLACEHOLDER = "%s"
 
     def __init__(
-        self, dsn, name: str | None = None, embedding_function: Callable | None = None
+        self,
+        dsn,
+        name: str | None = None,
+        embedding_function: Callable | None = None,
+        use_fts: bool = True,
     ) -> None:
         self.dsn = dsn
-        super().__init__(name=name, embedding_function=embedding_function)
+        super().__init__(
+            name=name, embedding_function=embedding_function, use_fts=use_fts
+        )
 
     @contextmanager
     def conn(self):
@@ -613,20 +643,37 @@ class CollectionPostgreSQL(CollectionBase):
             if self.embedding_function:
                 vectors = self.embedding_function(contents)
                 embeddings = self._format_vectors(vectors)
-                psycopg2.extras.execute_values(
-                    conn,
-                    """INSERT INTO documents
-                        (content, id, metadata, name, tsvector, embedding) VALUES %s
-                        ON CONFLICT(id) DO UPDATE SET
-                            content = EXCLUDED.content,
-                            metadata = EXCLUDED.metadata,
-                            name = EXCLUDED.name,
-                            tsvector = to_tsvector('simple', EXCLUDED.content),
-                            embedding = EXCLUDED.embedding;
-                    """,
-                    list(zip(contents, ids, metadatas, names, contents, embeddings)),
-                    template="(%s, %s, %s, %s, to_tsvector('simple', %s), %s)",
-                )
+                if self.use_fts:
+                    psycopg2.extras.execute_values(
+                        conn,
+                        """INSERT INTO documents
+                            (content, id, metadata, name, tsvector, embedding) VALUES %s
+                            ON CONFLICT(id) DO UPDATE SET
+                                content = EXCLUDED.content,
+                                metadata = EXCLUDED.metadata,
+                                name = EXCLUDED.name,
+                                tsvector = to_tsvector('simple', EXCLUDED.content),
+                                embedding = EXCLUDED.embedding;
+                        """,
+                        list(
+                            zip(contents, ids, metadatas, names, contents, embeddings)
+                        ),
+                        template="(%s, %s, %s, %s, to_tsvector('simple', %s), %s)",
+                    )
+                else:
+                    psycopg2.extras.execute_values(
+                        conn,
+                        """INSERT INTO documents
+                            (content, id, metadata, name, embedding) VALUES %s
+                            ON CONFLICT(id) DO UPDATE SET
+                                content = EXCLUDED.content,
+                                metadata = EXCLUDED.metadata,
+                                name = EXCLUDED.name,
+                                embedding = EXCLUDED.embedding;
+                        """,
+                        list(zip(contents, ids, metadatas, names, embeddings)),
+                        template="(%s, %s, %s, %s, %s)",
+                    )
             else:
                 psycopg2.extras.execute_values(
                     conn,
@@ -665,15 +712,26 @@ def db_url_to_dsn(db_url: str) -> str:
 
 
 def Collection(
-    db_url: str, name: str, embedding_function: Callable | None = None
+    db_url: str,
+    name: str,
+    embedding_function: Callable | None = None,
+    use_fts: bool = True,
 ) -> CollectionBase:
     """Constructor for search engine instance."""
     if not db_url:
-        return CollectionSQLite(name=name, embedding_function=embedding_function)
+        return CollectionSQLite(
+            name=name, embedding_function=embedding_function, use_fts=use_fts
+        )
     if db_url.startswith("sqlite:///"):
         return CollectionSQLite(
-            db_path=db_url[10:], name=name, embedding_function=embedding_function
+            db_path=db_url[10:],
+            name=name,
+            embedding_function=embedding_function,
+            use_fts=use_fts,
         )
     return CollectionPostgreSQL(
-        dsn=db_url_to_dsn(db_url), name=name, embedding_function=embedding_function
+        dsn=db_url_to_dsn(db_url),
+        name=name,
+        embedding_function=embedding_function,
+        use_fts=use_fts,
     )

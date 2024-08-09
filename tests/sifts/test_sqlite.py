@@ -432,3 +432,41 @@ def test_vector_update(tmp_path):
     assert res["results"][1]["content"] == "Lorem ipsum dolor"
     assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
     assert res["results"][1]["id"] == ids[1]
+
+
+def test_vector_update_nofts(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f, use_fts=False)
+    ids = search.add(["Lorem ipsum dolor", "sit amet"])
+    with pytest.raises(ValueError):
+        res = search.query("Lorem", vector_search=False)
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[0]
+    # update: switch order
+    search.update(ids=ids, contents=["sit amet", "Lorem ipsum dolor"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[1]

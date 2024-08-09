@@ -132,9 +132,16 @@ def run_timing():
     def f(documents):
         return [np.random.rand(384) for _ in documents]
 
-    engine = Collection(f"sqlite:///{path}", name="456", embedding_function=f)
+    engine = Collection(
+        f"sqlite:///{path}", name="456", embedding_function=f, use_fts=False
+    )
 
     print("-- Vector search --")
+    run_add_update_delete(engine)
+
+    engine = Collection(f"sqlite:///{path}", name="789", embedding_function=f)
+
+    print("-- Both --")
     run_add_update_delete(engine)
 
     shutil.rmtree(tmp_dir)
