@@ -70,7 +70,6 @@ class QueryParser:
 class CollectionBase:
 
     IS_POSTGRES = False
-    QUERY_INSERT_DOC = ""
     QUERY_INSERT_INDEX = ""
     QUERY_SEARCH = ""
     QUERY_GET = ""
@@ -149,8 +148,6 @@ class CollectionBase:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
         names = [self.name for _ in contents]
         ids = self._add(contents, ids, metadatas, names)
-        if self.embedding_function:
-            self._add_vectors(contents, ids)
         return ids
 
     def _add(
@@ -165,22 +162,7 @@ class CollectionBase:
 
     def _format_vectors(self, vectors):
         """Format the vectors so they can be inserted in the table."""
-        return [np.asarray(v, dtype=float).tobytes() for v in vectors]
-
-    def _add_vectors(
-        self,
-        contents: list[str],
-        ids: list[str | None],
-    ) -> list[str]:
-        """Add one or more documents to the collection."""
-        with self.conn() as conn:
-            vectors = self.embedding_function(contents)
-            embeddings = self._format_vectors(vectors)
-            conn.executemany(
-                f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE id = {self.PLACEHOLDER}",
-                list(zip(embeddings, ids)),
-            )
-        return ids
+        return [np.asarray(v, dtype=np.float32).tobytes() for v in vectors]
 
     def update(
         self,
@@ -407,12 +389,6 @@ class CollectionBase:
 class CollectionSQLite(CollectionBase):
 
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
-    QUERY_INSERT_DOC = """INSERT INTO documents
-            (id, metadata, name) VALUES (?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                metadata = excluded.metadata,
-                name = excluded.name
-            """
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
     QUERY_SEARCH = """SELECT count(*) OVER() AS full_count,
@@ -492,7 +468,15 @@ class CollectionSQLite(CollectionBase):
     ) -> list[str]:
         """Add one or more documents to the collection."""
         with self.conn() as conn:
-            conn.executemany(self.QUERY_INSERT_DOC, list(zip(ids, metadatas, names)))
+            conn.executemany(
+                """INSERT INTO documents
+            (id, metadata, name) VALUES (?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                metadata = excluded.metadata,
+                name = excluded.name
+            """,
+                list(zip(ids, metadatas, names)),
+            )
 
             conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
             conn.executemany(
@@ -503,12 +487,24 @@ class CollectionSQLite(CollectionBase):
             )
             conn.execute("DROP TABLE temp_ids")
             conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
+
+        # add embeddings
+        if self.embedding_function:
+            with self.conn() as conn:
+                vectors = self.embedding_function(contents)
+                embeddings = self._format_vectors(vectors)
+                conn.executemany(
+                    f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE id = {self.PLACEHOLDER}",
+                    list(zip(embeddings, ids)),
+                )
+
         return ids
 
     def _order_result(self, result, vector, limit, offset):
         """Order the result by vector similarity."""
         vectors = np.array(
-            [np.frombuffer(res.pop("rank"), dtype=float) for res in result]
+            [np.frombuffer(res.pop("rank"), dtype=np.float32) for res in result],
+            dtype=np.float32,
         )
         vector_norm = np.linalg.norm(vector)
         vectors_norm = np.linalg.norm(vectors, axis=1)
@@ -526,14 +522,6 @@ class CollectionPostgreSQL(CollectionBase):
 
     IS_POSTGRES = True
     QUERY_INSERT_INDEX = ""
-    QUERY_INSERT_DOC = """INSERT INTO documents
-        (content, id, metadata, name) VALUES %s
-        ON CONFLICT(id) DO UPDATE SET
-            content = EXCLUDED.content,
-            metadata = EXCLUDED.metadata,
-            name = EXCLUDED.name
-    """
-
     QUERY_DELETE_INDEX = "UPDATE documents SET tsvector = NULL WHERE id = %s"
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = %s"
     QUERY_SEARCH = """
@@ -597,25 +585,6 @@ class CollectionPostgreSQL(CollectionBase):
             CREATE INDEX IF NOT EXISTS name_idx ON documents (name);
         """
         )
-        # CREATE TRIGGER IF NOT EXISTS
-        conn.execute(
-            """
-            DO $$
-            BEGIN
-                -- Check if the trigger already exists
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM pg_trigger
-                    WHERE tgname = 'tsvectorupdate' AND tgrelid = 'documents'::regclass
-                ) THEN
-                    -- Create the trigger if it does not exist
-                    CREATE TRIGGER tsvectorupdate
-                    BEFORE INSERT OR UPDATE ON documents
-                    FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger(tsvector, 'pg_catalog.simple', content);
-                END IF;
-            END $$;
-            """
-        )
 
     def _create_embedding_column(self, conn) -> None:
         """Create the embedding column if it doesn't exist yet."""
@@ -641,18 +610,44 @@ class CollectionPostgreSQL(CollectionBase):
     ) -> list[str]:
         """Add one or more documents to the collection."""
         with self.conn() as conn:
-            psycopg2.extras.execute_values(
-                conn,
-                self.QUERY_INSERT_DOC,
-                list(zip(contents, ids, metadatas, names)),
-            )
+            if self.embedding_function:
+                vectors = self.embedding_function(contents)
+                embeddings = self._format_vectors(vectors)
+                psycopg2.extras.execute_values(
+                    conn,
+                    """INSERT INTO documents
+                        (content, id, metadata, name, tsvector, embedding) VALUES %s
+                        ON CONFLICT(id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            metadata = EXCLUDED.metadata,
+                            name = EXCLUDED.name,
+                            tsvector = to_tsvector('simple', EXCLUDED.content),
+                            embedding = EXCLUDED.embedding;
+                    """,
+                    list(zip(contents, ids, metadatas, names, contents, embeddings)),
+                    template="(%s, %s, %s, %s, to_tsvector('simple', %s), %s)",
+                )
+            else:
+                psycopg2.extras.execute_values(
+                    conn,
+                    """INSERT INTO documents
+                        (content, id, metadata, name, tsvector) VALUES %s
+                        ON CONFLICT(id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            metadata = EXCLUDED.metadata,
+                            name = EXCLUDED.name,
+                            tsvector = to_tsvector('simple', EXCLUDED.content);
+                    """,
+                    list(zip(contents, ids, metadatas, names, contents)),
+                    template="(%s, %s, %s, %s, to_tsvector('simple', %s))",
+                )
         return ids
 
     def _format_vectors(self, vectors):
         """Format the vectors so they can be inserted in the table."""
 
         def format_vector(v):
-            return "[" + ",".join([str(float(x)) for x in v]) + "]"
+            return "[" + ",".join([f"{float(x):.8f}" for x in v]) + "]"
 
         return [format_vector(v) for v in vectors]
 
