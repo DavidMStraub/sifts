@@ -1,4 +1,4 @@
-# Sifts &ndash; Simple Full Text Search
+# Sifts &ndash; Simple Full Text & Semantic Search
 
 🔎 Sifts is a simple but powerful Python package for managing and querying document collections with support for both SQLite and PostgreSQL databases.
 
