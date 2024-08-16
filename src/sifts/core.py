@@ -387,7 +387,7 @@ class CollectionBase:
         """Delete all documents."""
         where = f"WHERE doc.name = '{self.name}'"
         with self.conn() as conn:
-            if not self.IS_POSTGRES:
+            if self.use_fts and not self.IS_POSTGRES:
                 conn.execute(
                     f"""
                     DELETE FROM documents_fts
