@@ -7,7 +7,7 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 dynamic = ["version"]
-dependencies = ["SQLAlchemy", "psycopg2"]
+dependencies = ["SQLAlchemy", "psycopg2", "numpy"]
 
 [project.optional-dependencies]
 testing = ["pytest", "pytest-docker"]
