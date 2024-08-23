@@ -5,6 +5,7 @@ import tempfile
 import time
 import random
 import uuid
+import numpy as np
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -14,22 +15,21 @@ from sifts import Collection
 @contextmanager
 def timer(title: str):
     start_time = time.time()
-    print(f"Start: {title}")
     try:
         yield
     finally:
         end_time = time.time()
         elapsed_time = end_time - start_time
         if elapsed_time < 1e-9:
-            print(f"Done:  {title:<25} Took < 1 ns")
+            print(f"{title:<25} Took < 1 ns")
         elif elapsed_time < 1e-6:
-            print(f"Done:  {title:<25} Took {elapsed_time / 1e-9:.0f} ns")
+            print(f"{title:<25} Took {elapsed_time / 1e-9:.0f} ns")
         elif elapsed_time < 1e-3:
-            print(f"Done:  {title:<25} Took {elapsed_time / 1e-6:.0f} µs")
+            print(f"{title:<25} Took {elapsed_time / 1e-6:.0f} µs")
         elif elapsed_time < 0.5:
-            print(f"Done:  {title:<25} Took {elapsed_time / 1e-3:.0f} ms")
+            print(f"{title:<25} Took {elapsed_time / 1e-3:.0f} ms")
         else:
-            print(f"Done:  {title:<25} Took {elapsed_time:.2f} s")
+            print(f"{title:<25} Took {elapsed_time:.2f} s")
 
 
 word_list = [
@@ -126,7 +126,24 @@ def run_timing():
     with timer("Instantiate again"):
         engine = Collection(f"sqlite:///{path}", name="123")
 
+    print("-- Full-text search --")
     run_add_update_delete(engine)
+
+    def f(documents):
+        return [np.random.rand(384) for _ in documents]
+
+    engine = Collection(
+        f"sqlite:///{path}", name="456", embedding_function=f, use_fts=False
+    )
+
+    print("-- Vector search --")
+    run_add_update_delete(engine)
+
+    engine = Collection(f"sqlite:///{path}", name="789", embedding_function=f)
+
+    print("-- Both --")
+    run_add_update_delete(engine)
+
     shutil.rmtree(tmp_dir)
 
 
@@ -148,6 +165,12 @@ def run_add_update_delete(engine, n=100000):
     with timer("Create random metadata"):
         metadatas = [{"k1": get_word(), "k2": get_word()} for _ in range(N)]
 
+    if engine.embedding_function:
+        with timer("Embeddings"):
+            vectors = engine.embedding_function(contents)
+        with timer("Format vectors"):
+            engine._format_vectors(vectors)
+
     with timer("Add documents"):
         engine.add(contents, ids, metadatas)
 
@@ -168,6 +191,9 @@ def run_add_update_delete(engine, n=100000):
 
     with timer("Update documents"):
         engine.add(contents, ids, metadatas)
+
+    with timer("Query"):
+        engine.query("reprehenderit", vector_search=bool(engine.embedding_function))
 
 
 if __name__ == "__main__":

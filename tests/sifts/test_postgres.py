@@ -50,7 +50,7 @@ def search_engine():
     engine = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="my_name")
     yield engine
     with engine.conn() as conn:
-        conn.execute("DROP TRIGGER tsvectorupdate ON documents CASCADE;")
+        # conn.execute("DROP TRIGGER tsvectorupdate ON documents CASCADE;")
         conn.execute("TRUNCATE TABLE documents RESTART IDENTITY CASCADE;")
 
 
@@ -73,6 +73,9 @@ def test_query_document(postgres_service, search_engine):
 def test_update_document(postgres_service, search_engine):
     content = ["initial content"]
     ids = search_engine.add(content)
+    results = search_engine.query("initial")
+    assert results["total"] == 1
+    assert len(results["results"]) == 1
     updated_content = ["updated content"]
     search_engine.update(ids, updated_content)
     results = search_engine.query("updated")
@@ -81,6 +84,9 @@ def test_update_document(postgres_service, search_engine):
     results = search_engine.query("content")
     assert results["total"] == 1
     assert len(results["results"]) == 1
+    results = search_engine.query("initial")
+    assert results["total"] == 0
+    assert len(results["results"]) == 0
 
 
 def test_delete_document(postgres_service, search_engine):
@@ -354,3 +360,154 @@ def test_instantiate_twice(postgres_service, search_engine):
     search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="my_name")
     res = search.get()
     assert len(res["results"]) == 1
+
+
+def test_vector(postgres_service, search_engine):
+    vectors = {"Lorem ipsum dolor": [0.0, 0.0, 0.0], "sit amet": [0, 0.5, 0]}
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    with search.conn() as conn:
+        conn.execute("SELECT embedding FROM documents")
+        vectors = conn.fetchall()
+        vectors = [v[0] for v in vectors]
+        assert len(vectors) == 2
+        assert isinstance(vectors[0], str)
+        assert vectors[0] == "[0,0,0]"
+        assert vectors[1] == "[0,0.5,0]"
+
+
+def test_vector_query(postgres_service, search_engine):
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    # limit & offset
+    res = search.query("consectetur", vector_search=True, offset=0, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "sit amet"
+    res = search.query("consectetur", vector_search=True, offset=1, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
+    res = search.query("consectetur", vector_search=True, offset=2)
+    assert res["total"] == 0
+    assert len(res["results"]) == 0
+
+
+def test_vector_query_fts(postgres_service, search_engine):
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("Lorem", vector_search=False)
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
+
+
+def test_vector_update(postgres_service, search_engine):
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    ids = search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("Lorem", vector_search=False)
+    assert res["total"] == 1
+    res = search.query("consectetur", vector_search=False)
+    assert res["total"] == 0
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[0]
+    # update: switch order
+    search.update(ids=ids, contents=["sit amet", "Lorem ipsum dolor"])
+    res = search.query("Lorem", vector_search=False)
+    assert res["total"] == 1
+    res = search.query("consectetur", vector_search=False)
+    assert res["total"] == 0
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[1]
+
+
+def test_vector_update_nofts(postgres_service, search_engine):
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(
+        dsn=TEST_DB_DSN, name="vector", embedding_function=f, use_fts=False
+    )
+    ids = search.add(["Lorem ipsum dolor", "sit amet"])
+    with pytest.raises(ValueError):
+        res = search.query("Lorem", vector_search=False)
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[0]
+    # update: switch order
+    search.update(ids=ids, contents=["sit amet", "Lorem ipsum dolor"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[1]

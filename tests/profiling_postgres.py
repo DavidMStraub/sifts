@@ -1,5 +1,6 @@
 """Script to assess the performance of the Postgres backend."""
 
+import numpy as np
 import subprocess
 import time
 
@@ -50,7 +51,31 @@ def run_timing():
                 "postgresql://testuser:testpass@localhost:5432/testdb", name="123"
             )
 
-        run_add_update_delete(engine, n=100000)
+        print("-- Full-text search --")
+        run_add_update_delete(engine)
+
+        def f(documents):
+            return [np.random.rand(384) for _ in documents]
+
+        engine = Collection(
+            "postgresql://testuser:testpass@localhost:5432/testdb",
+            name="456",
+            embedding_function=f,
+            use_fts=False,
+        )
+
+        print("-- Vector search --")
+        run_add_update_delete(engine)
+
+        engine = Collection(
+            "postgresql://testuser:testpass@localhost:5432/testdb",
+            name="456",
+            embedding_function=f,
+        )
+
+        print("-- Both --")
+        run_add_update_delete(engine)
+
     except:
         subprocess.run(["docker", "compose", "down"])
         raise
