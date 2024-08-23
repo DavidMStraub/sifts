@@ -363,7 +363,7 @@ class CollectionBase:
                 result = self._order_result(result, vector, limit, offset)
         return {"total": n_tot, "results": result}
 
-    def _order_result(self, result, limit, offset):
+    def _order_result(self, result, vector, limit, offset):
         """Order the result by vector similarity."""
         return result
 
