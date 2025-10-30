@@ -34,12 +34,17 @@ class QueryParser:
 
     def _to_sqlite(self) -> str:
         query = self.query
+        # Quote words containing hyphens or other special characters
+        query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
         query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
         query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
         return query
 
     def _to_pg(self) -> str:
         query = self.query
+
+        # Quote words containing hyphens or other special characters
+        query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
 
         operators = {"&", "|", "and", "or"}
         words = query.split()
@@ -57,7 +62,14 @@ class QueryParser:
         query = " ".join(query_list)
         query = re.sub(r"\band\b", "&", query, flags=re.IGNORECASE)
         query = re.sub(r"\bor\b", "|", query, flags=re.IGNORECASE)
-        query = re.sub(r"\b(\w+)\*(?=\s|$|[^\w])", r"\1:*", query)
+        # Convert wildcards: only trailing wildcards (at word end) are supported in PostgreSQL
+        # Match word or quoted term followed by * at the end (before space, operator, or end of string)
+        query = re.sub(
+            r'("(?:[^"]|\\")*")\*(?=\s|&|\||$)', r"\1:*", query
+        )  # quoted terms with trailing wildcard
+        query = re.sub(
+            r"\b(\w+)\*(?=\s|&|\||$)", r"\1:*", query
+        )  # regular words with trailing wildcard
         return query
 
     def __str__(self) -> str:

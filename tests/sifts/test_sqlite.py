@@ -470,3 +470,50 @@ def test_vector_update_nofts(tmp_path):
     assert res["results"][1]["content"] == "Lorem ipsum dolor"
     assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
     assert res["results"][1]["id"] == ids[1]
+
+
+def test_query_hyphenated_word(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is a test-word example"])
+    search.add(["Another document without it"])
+    res = search.query("test-word")
+    assert res["total"] == 1
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "This is a test-word example"
+
+
+def test_query_hyphenated_wildcard(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is a test-word example"])
+    search.add(["This is a test-word-extended version"])
+    search.add(["Another document without it"])
+    res = search.query("test-word*")
+    assert res["total"] == 2
+    assert len(res["results"]) == 2
+
+
+def test_query_wildcard_end(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["tester document"])
+    search.add(["tests document"])
+    search.add(["another document"])
+    res = search.query("test*")
+    assert res["total"] == 3
+    assert len(res["results"]) == 3
+
+
+def test_query_wildcard_middle(tmp_path):
+    # Note: SQLite FTS5 does not support wildcards in the middle of words
+    # Only trailing wildcards are supported
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["tester document"])
+    search.add(["another document"])
+    res = search.query("te*ing")
+    # This won't match anything because mid-word wildcards aren't supported
+    assert res["total"] == 0

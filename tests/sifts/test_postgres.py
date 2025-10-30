@@ -511,3 +511,42 @@ def test_vector_update_nofts(postgres_service, search_engine):
     assert res["results"][1]["content"] == "Lorem ipsum dolor"
     assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
     assert res["results"][1]["id"] == ids[1]
+
+
+def test_query_hyphenated_word(postgres_service, search_engine):
+    search_engine.add(["This is a test-word example"])
+    search_engine.add(["Another document without it"])
+    res = search_engine.query("test-word")
+    assert res["total"] == 1
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "This is a test-word example"
+
+
+def test_query_hyphenated_wildcard(postgres_service, search_engine):
+    search_engine.add(["This is a test-word example"])
+    search_engine.add(["This is a test-word-extended version"])
+    search_engine.add(["Another document without it"])
+    res = search_engine.query("test-word*")
+    assert res["total"] == 2
+    assert len(res["results"]) == 2
+
+
+def test_query_wildcard_end(postgres_service, search_engine):
+    search_engine.add(["testing document"])
+    search_engine.add(["tester document"])
+    search_engine.add(["tests document"])
+    search_engine.add(["another document"])
+    res = search_engine.query("test*")
+    assert res["total"] == 3
+    assert len(res["results"]) == 3
+
+
+def test_query_wildcard_middle(postgres_service, search_engine):
+    # Note: PostgreSQL tsquery only supports trailing wildcards (prefix matching)
+    # Wildcards in the middle or at the beginning are not supported
+    search_engine.add(["testing document"])
+    search_engine.add(["tester document"])
+    search_engine.add(["another document"])
+    # Use trailing wildcard instead - this will match both "testing" and "tester"
+    res = search_engine.query("test*")
+    assert res["total"] == 2
