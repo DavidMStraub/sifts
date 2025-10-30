@@ -34,8 +34,8 @@ class QueryParser:
 
     def _to_sqlite(self) -> str:
         query = self.query
-        # Remove leading wildcards (not supported by SQLite FTS5)
-        query = re.sub(r"\*+(\w+)", r"\1", query)
+        # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
+        query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
         # Quote words containing hyphens or other special characters
         query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
         query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
@@ -45,8 +45,8 @@ class QueryParser:
     def _to_pg(self) -> str:
         query = self.query
 
-        # Remove leading wildcards (not supported by PostgreSQL tsquery)
-        query = re.sub(r"\*+(\w+)", r"\1", query)
+        # Remove leading wildcards at word boundaries (not supported by PostgreSQL tsquery)
+        query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
         # Quote words containing hyphens or other special characters
         query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
 
