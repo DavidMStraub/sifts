@@ -550,3 +550,13 @@ def test_query_wildcard_middle(postgres_service, search_engine):
     # Use trailing wildcard instead - this will match both "testing" and "tester"
     res = search_engine.query("test*")
     assert res["total"] == 2
+
+
+def test_query_wildcard_beginning(postgres_service, search_engine):
+    # Note: PostgreSQL tsquery does not support leading wildcards
+    search_engine.add(["testing document"])
+    search_engine.add(["interesting document"])
+    search_engine.add(["another document"])
+    res = search_engine.query("*sting")
+    # This won't match anything because leading wildcards aren't supported
+    assert res["total"] == 0

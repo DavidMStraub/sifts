@@ -517,3 +517,15 @@ def test_query_wildcard_middle(tmp_path):
     res = search.query("te*ing")
     # This won't match anything because mid-word wildcards aren't supported
     assert res["total"] == 0
+
+
+def test_query_wildcard_beginning(tmp_path):
+    # Note: SQLite FTS5 does not support leading wildcards
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["interesting document"])
+    search.add(["another document"])
+    res = search.query("*sting")
+    # This won't match anything because leading wildcards aren't supported
+    assert res["total"] == 0

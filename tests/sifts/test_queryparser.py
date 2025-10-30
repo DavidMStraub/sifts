@@ -99,13 +99,15 @@ def test_hyphen_wildcard_middle_postgres():
 
 
 def test_hyphen_wildcard_beginning_sqlite():
+    # Leading wildcards are stripped, then hyphenated word is quoted
     query = "*test-word"
-    assert str(QueryParser(query)) == '*"test-word"'
+    assert str(QueryParser(query)) == '"test-word"'
 
 
 def test_hyphen_wildcard_beginning_postgres():
+    # Leading wildcards are stripped, then hyphenated word is quoted
     query = "*test-word"
-    assert str(QueryParser(query, backend="postgresql")) == '*"test-word"'
+    assert str(QueryParser(query, backend="postgresql")) == '"test-word"'
 
 
 def test_wildcard_end_only_sqlite():
@@ -131,12 +133,12 @@ def test_wildcard_middle_only_postgres():
 
 
 def test_wildcard_beginning_only_sqlite():
-    # Leading wildcards are not supported by SQLite FTS5, left as-is
+    # Leading wildcards are not supported by SQLite FTS5, stripped out
     query = "*testword"
-    assert str(QueryParser(query)) == "*testword"
+    assert str(QueryParser(query)) == "testword"
 
 
 def test_wildcard_beginning_only_postgres():
-    # Leading wildcards are not supported by PostgreSQL tsquery, left as-is
+    # Leading wildcards are not supported by PostgreSQL tsquery, stripped out
     query = "*testword"
-    assert str(QueryParser(query, backend="postgresql")) == "*testword"
+    assert str(QueryParser(query, backend="postgresql")) == "testword"
