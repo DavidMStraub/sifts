@@ -142,3 +142,13 @@ def test_wildcard_beginning_only_postgres():
     # Leading wildcards are not supported by PostgreSQL tsquery, stripped out
     query = "*testword"
     assert str(QueryParser(query, backend="postgresql")) == "testword"
+
+
+def test_apostrophe_sqlite():
+    query = "it's"
+    assert str(QueryParser(query)) == '"it\'s"'
+
+
+def test_apostrophe_postgres():
+    query = "it's"
+    assert str(QueryParser(query, backend="postgresql")) == '"it\'s"'

@@ -560,3 +560,11 @@ def test_query_wildcard_beginning(postgres_service, search_engine):
     res = search_engine.query("*sting")
     # This won't match anything because leading wildcards aren't supported
     assert res["total"] == 0
+
+
+def test_query_apostrophe(postgres_service, search_engine):
+    search_engine.add(["It's a test document"])
+    search_engine.add(["Another document"])
+    res = search_engine.query("it's")
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "It's a test document"

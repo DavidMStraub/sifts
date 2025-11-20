@@ -36,8 +36,8 @@ class QueryParser:
         query = self.query
         # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
-        # Quote words containing hyphens or other special characters
-        query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
+        # Quote words containing hyphens or apostrophes (special characters in FTS5)
+        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
         query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
         query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
         return query
@@ -47,8 +47,8 @@ class QueryParser:
 
         # Remove leading wildcards at word boundaries (not supported by PostgreSQL tsquery)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
-        # Quote words containing hyphens or other special characters
-        query = re.sub(r"(\b\w+(?:-\w+)+\b)", r'"\1"', query)
+        # Quote words containing hyphens or apostrophes
+        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
 
         operators = {"&", "|", "and", "or"}
         words = query.split()

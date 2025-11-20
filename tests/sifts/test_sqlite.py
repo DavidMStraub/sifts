@@ -529,3 +529,13 @@ def test_query_wildcard_beginning(tmp_path):
     res = search.query("*sting")
     # This won't match anything because leading wildcards aren't supported
     assert res["total"] == 0
+
+
+def test_query_apostrophe(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["It's a test document"])
+    search.add(["Another document"])
+    res = search.query("it's")
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "It's a test document"
