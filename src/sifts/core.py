@@ -36,10 +36,36 @@ class QueryParser:
         query = self.query
         # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
+
         # Quote words containing hyphens or apostrophes (special characters in FTS5)
+        # This preserves the original behavior
         query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
+
+        # Additionally quote tokens containing other FTS5 special characters: ()[]{}:,"
+        # Match words/tokens that contain these special chars but aren't already quoted
+        # and don't break existing quotes or wildcards
+        def quote_special_chars(match):
+            token = match.group(0)
+            # Don't quote if it's an operator
+            if token.upper() in ('AND', 'OR'):
+                return token.upper()
+            # Escape any existing quotes and wrap in quotes
+            escaped = token.replace('"', '""')
+            return f'"{escaped}"'
+
+        # Quote tokens with FTS5 special characters (but not already in quotes)
+        # Match sequence of non-whitespace chars containing special chars
+        # Negative lookbehind/lookahead to avoid matching inside quotes
+        query = re.sub(
+            r'(?<!")(\S*[(){}\[\]:,]\S*)(?!")',
+            quote_special_chars,
+            query
+        )
+
+        # Normalize boolean operators
         query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
         query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
+
         return query
 
     def _to_pg(self) -> str:

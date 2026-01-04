@@ -152,3 +152,45 @@ def test_apostrophe_sqlite():
 def test_apostrophe_postgres():
     query = "it's"
     assert str(QueryParser(query, backend="postgresql")) == '"it\'s"'
+
+
+def test_comma_sqlite():
+    """Test FTS5 special character: comma"""
+    query = "Bydgoszcz, Poland"
+    assert str(QueryParser(query)) == '"Bydgoszcz," Poland'
+
+
+def test_comma_with_wildcard_sqlite():
+    """Test FTS5 special character: comma with wildcard"""
+    query = "Bydgoszcz, Poland*"
+    assert str(QueryParser(query)) == '"Bydgoszcz," Poland*'
+
+
+def test_parentheses_sqlite():
+    """Test FTS5 special character: parentheses"""
+    query = "test (example)"
+    assert str(QueryParser(query)) == 'test "(example)"'
+
+
+def test_colon_sqlite():
+    """Test FTS5 special character: colon"""
+    query = "time:12:00"
+    assert str(QueryParser(query)) == '"time:12:00"'
+
+
+def test_brackets_sqlite():
+    """Test FTS5 special character: brackets"""
+    query = "test[bracket]"
+    assert str(QueryParser(query)) == '"test[bracket]"'
+
+
+def test_multiple_special_chars_sqlite():
+    """Test multiple FTS5 special characters in one query"""
+    query = "test, (data) and value:123"
+    assert str(QueryParser(query)) == '"test," "(data)" AND "value:123"'
+
+
+def test_mixed_special_and_normal_sqlite():
+    """Test mix of normal words and special character words"""
+    query = "normal word, special"
+    assert str(QueryParser(query)) == 'normal "word," special'
