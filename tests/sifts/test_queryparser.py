@@ -73,7 +73,9 @@ def test_hyphen_multiple_sqlite():
 
 def test_hyphen_multiple_postgres():
     query = "test-word and another-word"
-    assert str(QueryParser(query, backend="postgresql")) == '"test-word" & "another-word"'
+    assert (
+        str(QueryParser(query, backend="postgresql")) == '"test-word" & "another-word"'
+    )
 
 
 def test_hyphen_wildcard_end_sqlite():
@@ -257,3 +259,27 @@ def test_multiple_wildcards_with_special_chars_sqlite():
     """Test multiple tokens with wildcards and special chars"""
     query = "city:* and country:*"
     assert str(QueryParser(query)) == '"city:"* AND "country:"*'
+
+
+def test_already_quoted_string_sqlite():
+    """Test that already-quoted strings are kept as-is"""
+    query = '"test value"'
+    assert str(QueryParser(query)) == '"test value"'
+
+
+def test_already_quoted_with_escaped_quotes_sqlite():
+    """Test already-quoted string with FTS5 escaped quotes (should stay unchanged)"""
+    query = '"test""value"'
+    assert str(QueryParser(query)) == '"test""value"'
+
+
+def test_already_quoted_with_special_chars_sqlite():
+    """Test already-quoted string containing special characters"""
+    query = '"test, (value:123)"'
+    assert str(QueryParser(query)) == '"test, (value:123)"'
+
+
+def test_mixed_quoted_and_unquoted_sqlite():
+    """Test mix of already-quoted and unquoted tokens"""
+    query = '"quoted part" and unquoted, word'
+    assert str(QueryParser(query)) == '"quoted part" AND "unquoted," word'

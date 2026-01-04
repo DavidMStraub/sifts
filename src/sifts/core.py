@@ -46,7 +46,7 @@ class QueryParser:
             if char == '"':
                 in_quotes = not in_quotes
                 current_token += char
-            elif char in (' ', '\t') and not in_quotes:
+            elif char in (" ", "\t") and not in_quotes:
                 if current_token:
                     tokens.append(current_token)
                     current_token = ""
@@ -64,20 +64,19 @@ class QueryParser:
         for token in tokens:
             # Handle already-quoted strings
             if token.startswith('"') and token.endswith('"') and len(token) > 1:
-                # Keep as-is but ensure internal quotes are escaped
-                inner = token[1:-1]
-                escaped = inner.replace('"', '""')
-                processed_tokens.append(f'"{escaped}"')
+                # Already quoted by user - keep as-is, don't double-escape
+                # User is responsible for proper FTS5 quote escaping inside their quotes
+                processed_tokens.append(token)
                 continue
 
             # Normalize boolean operators
-            if token.upper() in ('AND', 'OR'):
+            if token.upper() in ("AND", "OR"):
                 processed_tokens.append(token.upper())
                 continue
 
             # Extract trailing wildcard if present
             trailing_wildcard = ""
-            if token.endswith('*') and len(token) > 1:
+            if token.endswith("*") and len(token) > 1:
                 trailing_wildcard = "*"
                 token = token[:-1]
 
@@ -89,7 +88,7 @@ class QueryParser:
 
             if re.search(special_chars_pattern, token):
                 needs_quoting = True
-            elif re.match(r'\w+(?:[-\']\w+)+', token):
+            elif re.match(r"\w+(?:[-\']\w+)+", token):
                 # Words with hyphens or apostrophes (e.g., test-word, it's)
                 needs_quoting = True
 
