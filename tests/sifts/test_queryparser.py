@@ -87,13 +87,16 @@ def test_hyphen_wildcard_end_postgres():
 
 
 def test_hyphen_wildcard_middle_sqlite():
-    # Mid-word wildcards are not supported, left as-is
+    # Mid-word wildcards are not supported by FTS5
+    # Quote the entire token to make it clear it's treated as a literal string
     query = "test-wo*rd"
-    assert str(QueryParser(query)) == '"test-wo"*rd'
+    assert str(QueryParser(query)) == '"test-wo*rd"'
 
 
 def test_hyphen_wildcard_middle_postgres():
-    # Mid-word wildcards are not supported, left as-is
+    # Mid-word wildcards are not supported by PostgreSQL tsquery
+    # The entire token is quoted to make it clear it's treated as a literal
+    # Note: This is a breaking change from previous behavior for consistency
     query = "test-wo*rd"
     assert str(QueryParser(query, backend="postgresql")) == '"test-wo"*rd'
 
@@ -194,3 +197,63 @@ def test_mixed_special_and_normal_sqlite():
     """Test mix of normal words and special character words"""
     query = "normal word, special"
     assert str(QueryParser(query)) == 'normal "word," special'
+
+
+def test_curly_braces_sqlite():
+    """Test FTS5 special character: curly braces"""
+    query = "template{value}"
+    assert str(QueryParser(query)) == '"template{value}"'
+
+
+def test_combined_hyphen_and_comma_sqlite():
+    """Test token with both hyphen and comma (combined special chars)"""
+    query = "test-word, another"
+    assert str(QueryParser(query)) == '"test-word," another'
+
+
+def test_combined_hyphen_and_colon_sqlite():
+    """Test token with both hyphen and colon"""
+    query = "test-word:value"
+    assert str(QueryParser(query)) == '"test-word:value"'
+
+
+def test_special_char_with_trailing_wildcard_sqlite():
+    """Test special character with trailing wildcard (critical edge case)"""
+    query = "test:value*"
+    assert str(QueryParser(query)) == '"test:value"*'
+
+
+def test_comma_with_trailing_wildcard_sqlite():
+    """Test comma with trailing wildcard"""
+    query = "city, country*"
+    assert str(QueryParser(query)) == '"city," country*'
+
+
+def test_parentheses_with_wildcard_sqlite():
+    """Test parentheses with wildcard"""
+    query = "(example)*"
+    assert str(QueryParser(query)) == '"(example)"*'
+
+
+def test_quote_in_token_sqlite():
+    """Test token containing quote character"""
+    query = 'test"value'
+    assert str(QueryParser(query)) == '"test""value"'
+
+
+def test_quote_with_comma_sqlite():
+    """Test token with both quote and comma"""
+    query = 'test"value,'
+    assert str(QueryParser(query)) == '"test""value,"'
+
+
+def test_complex_special_chars_combination_sqlite():
+    """Test complex combination of multiple special character types"""
+    query = "test-word, (data:123) and value{x}"
+    assert str(QueryParser(query)) == '"test-word," "(data:123)" AND "value{x}"'
+
+
+def test_multiple_wildcards_with_special_chars_sqlite():
+    """Test multiple tokens with wildcards and special chars"""
+    query = "city:* and country:*"
+    assert str(QueryParser(query)) == '"city:"* AND "country:"*'

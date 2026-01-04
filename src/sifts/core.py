@@ -37,36 +37,70 @@ class QueryParser:
         # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
 
-        # Quote words containing hyphens or apostrophes (special characters in FTS5)
-        # This preserves the original behavior
-        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
+        # Tokenize the query while preserving quoted strings
+        tokens = []
+        current_token = ""
+        in_quotes = False
 
-        # Additionally quote tokens containing other FTS5 special characters: ()[]{}:,"
-        # Match words/tokens that contain these special chars but aren't already quoted
-        # and don't break existing quotes or wildcards
-        def quote_special_chars(match):
-            token = match.group(0)
-            # Don't quote if it's an operator
+        for char in query:
+            if char == '"':
+                in_quotes = not in_quotes
+                current_token += char
+            elif char in (' ', '\t') and not in_quotes:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+            else:
+                current_token += char
+
+        if current_token:
+            tokens.append(current_token)
+
+        # Process each token
+        processed_tokens = []
+        # FTS5 special characters that require quoting: ()[]{}:,"
+        special_chars_pattern = r'[(){}\[\]:,"]'
+
+        for token in tokens:
+            # Handle already-quoted strings
+            if token.startswith('"') and token.endswith('"') and len(token) > 1:
+                # Keep as-is but ensure internal quotes are escaped
+                inner = token[1:-1]
+                escaped = inner.replace('"', '""')
+                processed_tokens.append(f'"{escaped}"')
+                continue
+
+            # Normalize boolean operators
             if token.upper() in ('AND', 'OR'):
-                return token.upper()
-            # Escape any existing quotes and wrap in quotes
-            escaped = token.replace('"', '""')
-            return f'"{escaped}"'
+                processed_tokens.append(token.upper())
+                continue
 
-        # Quote tokens with FTS5 special characters (but not already in quotes)
-        # Match sequence of non-whitespace chars containing special chars
-        # Negative lookbehind/lookahead to avoid matching inside quotes
-        query = re.sub(
-            r'(?<!")(\S*[(){}\[\]:,]\S*)(?!")',
-            quote_special_chars,
-            query
-        )
+            # Extract trailing wildcard if present
+            trailing_wildcard = ""
+            if token.endswith('*') and len(token) > 1:
+                trailing_wildcard = "*"
+                token = token[:-1]
 
-        # Normalize boolean operators
-        query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
-        query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
+            # Check if token needs quoting
+            # Quote if it contains:
+            # 1. FTS5 special characters: ()[]{}:,"
+            # 2. Hyphens or apostrophes within word (e.g., test-word, it's)
+            needs_quoting = False
 
-        return query
+            if re.search(special_chars_pattern, token):
+                needs_quoting = True
+            elif re.match(r'\w+(?:[-\']\w+)+', token):
+                # Words with hyphens or apostrophes (e.g., test-word, it's)
+                needs_quoting = True
+
+            if needs_quoting:
+                # Escape any existing quotes
+                escaped_token = token.replace('"', '""')
+                processed_tokens.append(f'"{escaped_token}"{trailing_wildcard}')
+            else:
+                processed_tokens.append(token + trailing_wildcard)
+
+        return " ".join(processed_tokens)
 
     def _to_pg(self) -> str:
         query = self.query
