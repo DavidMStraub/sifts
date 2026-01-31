@@ -106,8 +106,57 @@ class QueryParser:
 
         # Remove leading wildcards at word boundaries (not supported by PostgreSQL tsquery)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
-        # Quote words containing hyphens or apostrophes
-        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
+
+        # Pattern for detecting PostgreSQL tsquery special characters that need quoting
+        # Similar to SQLite, but PostgreSQL tsquery has different special chars
+        # We need to quote tokens with: commas, colons (outside weight syntax), parentheses, brackets, braces
+        special_chars_pattern = r'[(){}\[\]:,"]'
+
+        # Tokenize while preserving quoted strings
+        tokens = []
+        current_token = ""
+        in_quotes = False
+
+        for char in query:
+            if char == '"':
+                in_quotes = not in_quotes
+                current_token += char
+            elif char.isspace() and not in_quotes:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+            else:
+                current_token += char
+
+        if current_token:
+            tokens.append(current_token)
+
+        # Process each token
+        processed_tokens = []
+        for token in tokens:
+            # Skip already quoted strings
+            if token.startswith('"') and token.endswith('"'):
+                processed_tokens.append(token)
+                continue
+
+            # Check if token needs quoting (contains special chars or hyphens/apostrophes)
+            needs_quoting = bool(re.search(special_chars_pattern, token)) or bool(re.search(r"[-']", token))
+
+            if needs_quoting:
+                # Extract trailing wildcard if present
+                trailing_wildcard = ""
+                if token.endswith("*"):
+                    trailing_wildcard = "*"
+                    token = token[:-1]
+
+                # Escape internal quotes
+                token = token.replace('"', '""')
+                # Wrap in quotes and re-add wildcard
+                processed_tokens.append(f'"{token}"{trailing_wildcard}')
+            else:
+                processed_tokens.append(token)
+
+        query = " ".join(processed_tokens)
 
         operators = {"&", "|", "and", "or"}
         words = query.split()
