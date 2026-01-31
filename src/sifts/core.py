@@ -36,11 +36,70 @@ class QueryParser:
         query = self.query
         # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
-        # Quote words containing hyphens or apostrophes (special characters in FTS5)
-        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
-        query = re.sub(r"\band\b", "AND", query, flags=re.IGNORECASE)
-        query = re.sub(r"\bor\b", "OR", query, flags=re.IGNORECASE)
-        return query
+
+        # Tokenize the query while preserving quoted strings
+        tokens = []
+        current_token = ""
+        in_quotes = False
+
+        for char in query:
+            if char == '"':
+                in_quotes = not in_quotes
+                current_token += char
+            elif char in (" ", "\t") and not in_quotes:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+            else:
+                current_token += char
+
+        if current_token:
+            tokens.append(current_token)
+
+        # Process each token
+        processed_tokens = []
+        # FTS5 special characters that require quoting: ()[]{}:,"
+        special_chars_pattern = r'[(){}\[\]:,"]'
+
+        for token in tokens:
+            # Handle already-quoted strings
+            if token.startswith('"') and token.endswith('"') and len(token) > 1:
+                # Already quoted by user - keep as-is, don't double-escape
+                # User is responsible for proper FTS5 quote escaping inside their quotes
+                processed_tokens.append(token)
+                continue
+
+            # Normalize boolean operators
+            if token.upper() in ("AND", "OR"):
+                processed_tokens.append(token.upper())
+                continue
+
+            # Extract trailing wildcard if present
+            trailing_wildcard = ""
+            if token.endswith("*") and len(token) > 1:
+                trailing_wildcard = "*"
+                token = token[:-1]
+
+            # Check if token needs quoting
+            # Quote if it contains:
+            # 1. FTS5 special characters: ()[]{}:,"
+            # 2. Hyphens or apostrophes within word (e.g., test-word, it's)
+            needs_quoting = False
+
+            if re.search(special_chars_pattern, token):
+                needs_quoting = True
+            elif re.match(r"\w+(?:[-\']\w+)+", token):
+                # Words with hyphens or apostrophes (e.g., test-word, it's)
+                needs_quoting = True
+
+            if needs_quoting:
+                # Escape any existing quotes
+                escaped_token = token.replace('"', '""')
+                processed_tokens.append(f'"{escaped_token}"{trailing_wildcard}')
+            else:
+                processed_tokens.append(token + trailing_wildcard)
+
+        return " ".join(processed_tokens)
 
     def _to_pg(self) -> str:
         query = self.query

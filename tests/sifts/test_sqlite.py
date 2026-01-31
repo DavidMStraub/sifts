@@ -539,3 +539,88 @@ def test_query_apostrophe(tmp_path):
     res = search.query("it's")
     assert res["total"] == 1
     assert res["results"][0]["content"] == "It's a test document"
+
+
+def test_query_comma_special_char(tmp_path):
+    """Integration test: Search for text containing comma (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Bydgoszcz, Poland is a city"])
+    search.add(["Another document without special chars"])
+    # This should not raise FTS5 syntax error and should find the document
+    res = search.query("Bydgoszcz, Poland")
+    assert res["total"] == 1
+    assert "Bydgoszcz, Poland" in res["results"][0]["content"]
+
+
+def test_query_colon_special_char(tmp_path):
+    """Integration test: Search for text containing colon (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["The time:12:00 format is common"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("time:12:00")
+    assert res["total"] == 1
+    assert "time:12:00" in res["results"][0]["content"]
+
+
+def test_query_parentheses_special_char(tmp_path):
+    """Integration test: Search for text with parentheses (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is test (example) text"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("test (example)")
+    assert res["total"] == 1
+    assert "test (example)" in res["results"][0]["content"]
+
+
+def test_query_brackets_special_char(tmp_path):
+    """Integration test: Search for text with brackets (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Array access test[0] example"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("test[0]")
+    assert res["total"] == 1
+    assert "test[0]" in res["results"][0]["content"]
+
+
+def test_query_curly_braces_special_char(tmp_path):
+    """Integration test: Search for text with curly braces (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Template {value} syntax"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("template{value}")
+    assert res["total"] == 1
+    assert "{value}" in res["results"][0]["content"]
+
+
+def test_query_colon_wildcard_special_char(tmp_path):
+    """Integration test: Special char with wildcard"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["User profile user:john123"])
+    search.add(["User profile user:jane456"])
+    search.add(["Regular document"])
+    # Should find both user: documents
+    res = search.query("user:*")
+    assert res["total"] == 2
+
+
+def test_query_multiple_special_chars(tmp_path):
+    """Integration test: Multiple special char types in one query"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Complex: (test) with {data}, and [values]"])
+    search.add(["Regular document"])
+    # Should handle multiple special characters correctly
+    res = search.query("(test) and {data}")
+    assert res["total"] == 1
+    assert "(test)" in res["results"][0]["content"]
+    assert "{data}" in res["results"][0]["content"]

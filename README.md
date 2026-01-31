@@ -70,6 +70,62 @@ Sifts supports the following search syntax:
 
 The search syntax is the same regardless of backend.
 
+### Special Character Handling
+
+Sifts automatically handles special characters that have meaning in SQLite FTS5 and PostgreSQL tsquery syntax, preventing syntax errors when searching for terms containing these characters.
+
+#### Automatically Quoted Characters (SQLite)
+
+The following characters are automatically quoted when found in search terms:
+- **Parentheses** `()` - used for grouping in FTS5
+- **Brackets** `[]` - used for column filters in FTS5
+- **Curly braces** `{}` - used for advanced FTS5 syntax
+- **Colon** `:` - used for column-specific searches
+- **Comma** `,` - used as token separator in FTS5
+- **Quote** `"` - used for phrase searches
+- **Hyphen** `-` - in hyphenated words like "test-word"
+- **Apostrophe** `'` - in contractions like "it's"
+
+#### Examples
+
+```python
+# Search for city with comma - automatically quoted
+collection.query("Bydgoszcz, Poland")
+# Internal query: "Bydgoszcz," Poland
+
+# Search for time with colon - automatically quoted
+collection.query("time:12:00")
+# Internal query: "time:12:00"
+
+# Search with parentheses - automatically quoted
+collection.query("test (example)")
+# Internal query: test "(example)"
+
+# Wildcards work with special characters
+collection.query("city:*")
+# Internal query: "city:"*
+```
+
+#### Manual Quoting
+
+You can still use explicit quotes for exact phrase matching:
+
+```python
+# Exact phrase match
+collection.query('"exact phrase"')
+```
+
+To include a literal quote in your search, use FTS5's double-quote escape:
+
+```python
+# Search for: test"value
+collection.query('"test""value"')
+```
+
+#### PostgreSQL Differences
+
+PostgreSQL tsquery handles some characters differently than SQLite FTS5. The query parser adjusts automatically based on the backend, but the search experience remains consistent.
+
 ### Vector search (semantic search)
 
 Sifts can also be used as vector store, used for semantic search engines or retrieval-augmented generation (RAG) with large language models (LLMs).
