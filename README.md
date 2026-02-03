@@ -124,7 +124,22 @@ collection.query('"test""value"')
 
 #### PostgreSQL Differences
 
-PostgreSQL tsquery handles some characters differently than SQLite FTS5. The query parser adjusts automatically based on the backend, but the search experience remains consistent.
+PostgreSQL tsquery handles special characters differently than SQLite FTS5:
+- **SQLite**: Quotes special characters to preserve them literally
+- **PostgreSQL**: Replaces special characters with spaces to preserve term boundaries
+
+Example:
+```python
+# SQLite
+collection.query("time:12:00")
+# Internal: "time:12:00" (searches for exact string)
+
+# PostgreSQL
+collection.query("time:12:00")
+# Internal: time & 12 & 00 (searches for separate words)
+```
+
+Both approaches work because full-text search indexes content by words, not punctuation.
 
 ### Vector search (semantic search)
 

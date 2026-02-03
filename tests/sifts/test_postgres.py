@@ -582,13 +582,16 @@ def test_query_comma_special_char(postgres_service, search_engine):
 
 
 def test_query_colon_special_char(postgres_service, search_engine):
-    """Integration test: Search with colon (PostgreSQL strips colons)"""
-    search_engine.add(["The meeting time is important"])
+    """Integration test: Search for text containing colon"""
+    # Restore original test that validates the actual use case
+    search_engine.add(["The time:12:00 format is common"])
     search_engine.add(["Regular document"])
-    # PostgreSQL strips colons, so we search for just "time"
-    res = search_engine.query("time:")
+    # Query gets transformed: "time:12:00" → "time 12 00"
+    # This should match because PostgreSQL indexes "time", "12", "00"
+    res = search_engine.query("time:12:00")
     assert res["total"] == 1
-    assert "time" in res["results"][0]["content"]
+    # Verify we found the document with the colon
+    assert "time:12:00" in res["results"][0]["content"]
 
 
 def test_query_parentheses_special_char(postgres_service, search_engine):
