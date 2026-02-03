@@ -160,21 +160,25 @@ def test_apostrophe_postgres():
 
 
 def test_comma_postgres():
-    """Test PostgreSQL special character: comma"""
+    """Test PostgreSQL special character: comma (stripped)"""
     query = "Bydgoszcz, Poland"
-    assert str(QueryParser(query, backend="postgresql")) == '"Bydgoszcz," & Poland'
+    # PostgreSQL tsquery doesn't support quoting special chars like SQLite
+    # Commas are stripped to avoid syntax errors
+    assert str(QueryParser(query, backend="postgresql")) == 'Bydgoszcz & Poland'
 
 
 def test_colon_postgres():
-    """Test PostgreSQL special character: colon"""
+    """Test PostgreSQL special character: colon (stripped)"""
     query = "time:12:00"
-    assert str(QueryParser(query, backend="postgresql")) == '"time:12:00"'
+    # Colons are stripped in PostgreSQL tsquery
+    assert str(QueryParser(query, backend="postgresql")) == 'time1200'
 
 
 def test_parentheses_postgres():
-    """Test PostgreSQL special character: parentheses"""
+    """Test PostgreSQL special character: parentheses (stripped)"""
     query = "test (example)"
-    assert str(QueryParser(query, backend="postgresql")) == 'test & "(example)"'
+    # Parentheses are stripped in PostgreSQL tsquery
+    assert str(QueryParser(query, backend="postgresql")) == 'test & example'
 
 
 def test_comma_sqlite():

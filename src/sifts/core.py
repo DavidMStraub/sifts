@@ -107,10 +107,9 @@ class QueryParser:
         # Remove leading wildcards at word boundaries (not supported by PostgreSQL tsquery)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
 
-        # Pattern for detecting PostgreSQL tsquery special characters that need quoting
-        # Similar to SQLite, but PostgreSQL tsquery has different special chars
-        # We need to quote tokens with: commas, colons (outside weight syntax), parentheses, brackets, braces
-        special_chars_pattern = r'[(){}\[\]:,"]'
+        # For PostgreSQL tsquery, we need a different approach than SQLite
+        # PostgreSQL to_tsquery() doesn't support quote escaping like FTS5
+        # Instead, we'll remove problematic special characters from tokens
 
         # Tokenize while preserving quoted strings
         tokens = []
@@ -139,22 +138,22 @@ class QueryParser:
                 processed_tokens.append(token)
                 continue
 
-            # Check if token needs quoting (contains special chars or hyphens/apostrophes)
-            needs_quoting = bool(re.search(special_chars_pattern, token)) or bool(re.search(r"[-']", token))
+            # Extract trailing wildcard if present
+            trailing_wildcard = ""
+            if token.endswith("*"):
+                trailing_wildcard = "*"
+                token = token[:-1]
 
-            if needs_quoting:
-                # Extract trailing wildcard if present
-                trailing_wildcard = ""
-                if token.endswith("*"):
-                    trailing_wildcard = "*"
-                    token = token[:-1]
-
-                # Escape internal quotes
-                token = token.replace('"', '""')
-                # Wrap in quotes and re-add wildcard
+            # Check if token contains hyphens or apostrophes (these we quote)
+            if re.search(r"[-']", token):
+                # Remove any problematic characters that tsquery can't handle
+                token = re.sub(r'[(){}\[\]:,"]', '', token)
                 processed_tokens.append(f'"{token}"{trailing_wildcard}')
             else:
-                processed_tokens.append(token)
+                # For other tokens, just remove problematic special characters
+                token = re.sub(r'[(){}\[\]:,"]', '', token)
+                if token:  # Only add if token is not empty after cleaning
+                    processed_tokens.append(f'{token}{trailing_wildcard}')
 
         query = " ".join(processed_tokens)
 
