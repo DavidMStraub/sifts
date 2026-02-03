@@ -578,7 +578,9 @@ def test_query_comma_special_char(postgres_service, search_engine):
     # This will still match because full-text search indexes words
     res = search_engine.query("Bydgoszcz, Poland")
     assert res["total"] == 1
+    # Verify both words are found in the matched document
     assert "Bydgoszcz" in res["results"][0]["content"]
+    assert "Poland" in res["results"][0]["content"]
 
 
 def test_query_colon_special_char(postgres_service, search_engine):
@@ -596,10 +598,11 @@ def test_query_colon_special_char(postgres_service, search_engine):
 
 def test_query_parentheses_special_char(postgres_service, search_engine):
     """Integration test: Search with parentheses (PostgreSQL strips them)"""
-    search_engine.add(["This is test example text"])
+    search_engine.add(["This is test (example) text"])
     search_engine.add(["Regular document"])
     # PostgreSQL strips parentheses, so "test (example)" becomes "test example"
+    # This should match documents containing parentheses
     res = search_engine.query("test (example)")
     assert res["total"] == 1
-    assert "test" in res["results"][0]["content"]
-    assert "example" in res["results"][0]["content"]
+    # Verify the document with parentheses was matched
+    assert "test (example)" in res["results"][0]["content"]
