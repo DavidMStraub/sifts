@@ -100,7 +100,7 @@ def test_hyphen_wildcard_middle_postgres():
     # The entire token is quoted to make it clear it's treated as a literal
     # Note: This is a breaking change from previous behavior for consistency
     query = "test-wo*rd"
-    assert str(QueryParser(query, backend="postgresql")) == '"test-wo"*rd'
+    assert str(QueryParser(query, backend="postgresql")) == '"test-wo*rd"'
 
 
 def test_hyphen_wildcard_beginning_sqlite():
@@ -157,6 +157,28 @@ def test_apostrophe_sqlite():
 def test_apostrophe_postgres():
     query = "it's"
     assert str(QueryParser(query, backend="postgresql")) == '"it\'s"'
+
+
+def test_comma_postgres():
+    """Test PostgreSQL special character: comma (replaced with space)"""
+    query = "Bydgoszcz, Poland"
+    # PostgreSQL tsquery doesn't support quoting special chars like SQLite
+    # Commas are replaced with spaces to preserve term boundaries
+    assert str(QueryParser(query, backend="postgresql")) == 'Bydgoszcz & Poland'
+
+
+def test_colon_postgres():
+    """Test PostgreSQL special character: colon (replaced with space)"""
+    query = "time:12:00"
+    # Colons replaced with spaces to preserve term boundaries
+    assert str(QueryParser(query, backend="postgresql")) == 'time & 12 & 00'
+
+
+def test_parentheses_postgres():
+    """Test PostgreSQL special character: parentheses (replaced with space)"""
+    query = "test (example)"
+    # Parentheses replaced with spaces to preserve term boundaries
+    assert str(QueryParser(query, backend="postgresql")) == 'test & example'
 
 
 def test_comma_sqlite():

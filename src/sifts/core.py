@@ -32,12 +32,11 @@ class QueryParser:
         self.query = query.strip()
         self.backend = backend
 
-    def _to_sqlite(self) -> str:
-        query = self.query
-        # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
-        query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
+    def _tokenize_preserving_quotes(self, query: str) -> list[str]:
+        """Tokenize query while preserving quoted strings.
 
-        # Tokenize the query while preserving quoted strings
+        Returns list of tokens where quoted strings are kept intact.
+        """
         tokens = []
         current_token = ""
         in_quotes = False
@@ -46,7 +45,7 @@ class QueryParser:
             if char == '"':
                 in_quotes = not in_quotes
                 current_token += char
-            elif char in (" ", "\t") and not in_quotes:
+            elif char.isspace() and not in_quotes:
                 if current_token:
                     tokens.append(current_token)
                     current_token = ""
@@ -55,6 +54,16 @@ class QueryParser:
 
         if current_token:
             tokens.append(current_token)
+
+        return tokens
+
+    def _to_sqlite(self) -> str:
+        query = self.query
+        # Remove leading wildcards at word boundaries (not supported by SQLite FTS5)
+        query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
+
+        # Tokenize the query while preserving quoted strings
+        tokens = self._tokenize_preserving_quotes(query)
 
         # Process each token
         processed_tokens = []
@@ -106,8 +115,41 @@ class QueryParser:
 
         # Remove leading wildcards at word boundaries (not supported by PostgreSQL tsquery)
         query = re.sub(r"(?:^|\s)\*+", r" ", query).strip()
-        # Quote words containing hyphens or apostrophes
-        query = re.sub(r"(\b\w+(?:[-']\w+)+\b)", r'"\1"', query)
+
+        # For PostgreSQL tsquery, we need a different approach than SQLite
+        # PostgreSQL to_tsquery() doesn't support quote escaping like FTS5
+        # Replace problematic special characters with spaces to preserve term boundaries
+
+        # Tokenize while preserving quoted strings
+        tokens = self._tokenize_preserving_quotes(query)
+
+        # Process each token
+        processed_tokens = []
+        for token in tokens:
+            # Skip already quoted strings (with length check to avoid single quote)
+            if token.startswith('"') and token.endswith('"') and len(token) > 1:
+                processed_tokens.append(token)
+                continue
+
+            # Extract trailing wildcard if present
+            trailing_wildcard = ""
+            if token.endswith("*"):
+                trailing_wildcard = "*"
+                token = token[:-1]
+
+            # Check if token contains hyphens or apostrophes (these we quote)
+            if re.search(r"[-']", token):
+                # Replace problematic characters with spaces to preserve term boundaries
+                token = re.sub(r'[(){}\[\]:,"]', ' ', token).strip()
+                if token:  # Only add if token is not empty after cleaning
+                    processed_tokens.append(f'"{token}"{trailing_wildcard}')
+            else:
+                # For other tokens, replace problematic special characters with spaces
+                token = re.sub(r'[(){}\[\]:,"]', ' ', token).strip()
+                if token:  # Only add if token is not empty after cleaning
+                    processed_tokens.append(f'{token}{trailing_wildcard}')
+
+        query = " ".join(processed_tokens)
 
         operators = {"&", "|", "and", "or"}
         words = query.split()
