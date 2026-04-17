@@ -540,11 +540,11 @@ class CollectionSQLite(CollectionBase):
                 JOIN documents doc ON doc.id = fts.id
                 WHERE TRUE
                 """
-    QUERY_FILTER_META = 'json_extract(doc.metadata, "$.{}") {} (?)'
+    QUERY_FILTER_META = "json_extract(doc.metadata, '$.{}') {} (?)"
     QUERY_FILTER_META_FLOAT = QUERY_FILTER_META
-    QUERY_FILTER_META_IN = 'json_extract(doc.metadata, "$.{}") IN ({})'
-    QUERY_FILTER_META_NOT_IN = 'json_extract(doc.metadata, "$.{}") NOT IN ({})'
-    QUERY_ORDER_META = 'json_extract(doc.metadata, "$.{}")'
+    QUERY_FILTER_META_IN = "json_extract(doc.metadata, '$.{}') IN ({})"
+    QUERY_FILTER_META_NOT_IN = "json_extract(doc.metadata, '$.{}') NOT IN ({})"
+    QUERY_ORDER_META = "json_extract(doc.metadata, '$.{}')"
     QUERY_LIMIT = " LIMIT (?)"
     QUERY_OFFSET = " OFFSET (?)"
 

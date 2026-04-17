@@ -143,6 +143,16 @@ def test_query_metadata(tmp_path):
     assert res[0]["metadata"] is None
 
 
+def test_json_extract_paths_use_single_quotes():
+    assert CollectionSQLite.QUERY_FILTER_META == "json_extract(doc.metadata, '$.{}') {} (?)"
+    assert CollectionSQLite.QUERY_FILTER_META_IN == "json_extract(doc.metadata, '$.{}') IN ({})"
+    assert (
+        CollectionSQLite.QUERY_FILTER_META_NOT_IN
+        == "json_extract(doc.metadata, '$.{}') NOT IN ({})"
+    )
+    assert CollectionSQLite.QUERY_ORDER_META == "json_extract(doc.metadata, '$.{}')"
+
+
 def test_query_order(tmp_path):
     path = tmp_path / "search_engine.db"
     search = CollectionSQLite(path, name="123")
