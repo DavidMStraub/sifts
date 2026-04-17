@@ -144,26 +144,38 @@ def test_query_metadata(tmp_path):
 
 
 def test_query_metadata_filter_and_order_with_dqs_disabled(tmp_path, monkeypatch):
-    if not hasattr(sqlite3.Connection, "setconfig") or not hasattr(
-        sqlite3, "SQLITE_DBCONFIG_DQS_DML"
+    if (
+        not hasattr(sqlite3.Connection, "setconfig")
+        or not hasattr(sqlite3, "SQLITE_DBCONFIG_DQS_DML")
+        or not hasattr(sqlite3, "SQLITE_DBCONFIG_DQS_DDL")
     ):
         pytest.skip("SQLite DQS runtime config not available")
 
+    def disable_dqs(conn):
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, 0)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL, 0)
+
     probe = sqlite3.connect(":memory:")
     try:
-        probe.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, 0)
-        probe.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL, 0)
+        disable_dqs(probe)
     except sqlite3.Error:
         pytest.skip("SQLite DQS runtime config not supported")
     finally:
         probe.close()
 
-    connect = sqlite3.connect
+    original_connect = sqlite3.connect
+    dqs_settings = []
 
     def connect_with_dqs_disabled(*args, **kwargs):
-        conn = connect(*args, **kwargs)
-        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, 0)
-        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL, 0)
+        conn = original_connect(*args, **kwargs)
+        disable_dqs(conn)
+        if hasattr(conn, "getconfig"):
+            dqs_settings.append(
+                (
+                    conn.getconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML),
+                    conn.getconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL),
+                )
+            )
         return conn
 
     monkeypatch.setattr("sifts.core.sqlite3.connect", connect_with_dqs_disabled)
@@ -174,7 +186,20 @@ def test_query_metadata_filter_and_order_with_dqs_disabled(tmp_path, monkeypatch
     search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "a"}], ids=["i2"])
     search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "a"}], ids=["i3"])
 
+    if dqs_settings:
+        assert all(setting == (0, 0) for setting in dqs_settings)
+
     res = search.query("Lorem", where={"k2": "a"}, order_by="k1")["results"]
+    assert [r["id"] for r in res] == ["i2", "i3"]
+
+    res = search.query(
+        "Lorem", where={"k1": {"$in": ["b", "c"]}}, order_by="k1"
+    )["results"]
+    assert [r["id"] for r in res] == ["i2", "i3"]
+
+    res = search.query(
+        "Lorem", where={"k1": {"$nin": ["a"]}}, order_by="k1"
+    )["results"]
     assert [r["id"] for r in res] == ["i2", "i3"]
 
 
