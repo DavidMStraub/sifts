@@ -143,14 +143,39 @@ def test_query_metadata(tmp_path):
     assert res[0]["metadata"] is None
 
 
-def test_json_extract_paths_use_single_quotes():
-    assert CollectionSQLite.QUERY_FILTER_META == "json_extract(doc.metadata, '$.{}') {} (?)"
-    assert CollectionSQLite.QUERY_FILTER_META_IN == "json_extract(doc.metadata, '$.{}') IN ({})"
-    assert (
-        CollectionSQLite.QUERY_FILTER_META_NOT_IN
-        == "json_extract(doc.metadata, '$.{}') NOT IN ({})"
-    )
-    assert CollectionSQLite.QUERY_ORDER_META == "json_extract(doc.metadata, '$.{}')"
+def test_query_metadata_filter_and_order_with_dqs_disabled(tmp_path, monkeypatch):
+    if not hasattr(sqlite3.Connection, "setconfig") or not hasattr(
+        sqlite3, "SQLITE_DBCONFIG_DQS_DML"
+    ):
+        pytest.skip("SQLite DQS runtime config not available")
+
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, 0)
+        probe.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL, 0)
+    except sqlite3.Error:
+        pytest.skip("SQLite DQS runtime config not supported")
+    finally:
+        probe.close()
+
+    connect = sqlite3.connect
+
+    def connect_with_dqs_disabled(*args, **kwargs):
+        conn = connect(*args, **kwargs)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DML, 0)
+        conn.setconfig(sqlite3.SQLITE_DBCONFIG_DQS_DDL, 0)
+        return conn
+
+    monkeypatch.setattr("sifts.core.sqlite3.connect", connect_with_dqs_disabled)
+
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "b"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "a"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "a"}], ids=["i3"])
+
+    res = search.query("Lorem", where={"k2": "a"}, order_by="k1")["results"]
+    assert [r["id"] for r in res] == ["i2", "i3"]
 
 
 def test_query_order(tmp_path):
