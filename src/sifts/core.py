@@ -618,6 +618,11 @@ class CollectionSQLite(CollectionBase):
         names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
+        # compute embeddings before taking the write lock: this can be slow
+        # (model inference, remote API) and must not block other writers
+        if self.embedding_function:
+            vectors = self.embedding_function(contents)
+            embeddings = self._format_vectors(vectors)
         with self.conn(write=True) as conn:
             conn.executemany(
                 """INSERT INTO documents
@@ -644,8 +649,6 @@ class CollectionSQLite(CollectionBase):
 
             # add/update embeddings
             if self.embedding_function:
-                vectors = self.embedding_function(contents)
-                embeddings = self._format_vectors(vectors)
                 conn.executemany(
                     f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE id = {self.PLACEHOLDER}",
                     list(zip(embeddings, ids)),
