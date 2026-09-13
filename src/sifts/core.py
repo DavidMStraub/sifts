@@ -218,8 +218,11 @@ class CollectionBase:
         self.create_tables()
 
     @contextmanager
-    def conn(self):
-        """Provide a transactional scope around a series of operations."""
+    def conn(self, write: bool = False):
+        """Provide a transactional scope around a series of operations.
+
+        ``write`` must be set for transactions that modify the database.
+        """
         raise NotImplementedError
 
     def create_tables(self) -> None:
@@ -300,7 +303,7 @@ class CollectionBase:
 
     def delete(self, ids: list[str]) -> None:
         """Delete one or more documents."""
-        with self.conn() as conn:
+        with self.conn(write=True) as conn:
             conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in ids])
             conn.executemany(self.QUERY_DELETE_DOC, [(did,) for did in ids])
 
@@ -503,7 +506,7 @@ class CollectionBase:
     def delete_all(self) -> None:
         """Delete all documents."""
         where = f"WHERE doc.name = '{self.name}'"
-        with self.conn() as conn:
+        with self.conn(write=True) as conn:
             if self.use_fts and not self.IS_POSTGRES:
                 conn.execute(
                     f"""
@@ -561,10 +564,19 @@ class CollectionSQLite(CollectionBase):
         )
 
     @contextmanager
-    def conn(self):
-        """Provide a transactional scope around a series of operations."""
+    def conn(self, write: bool = False):
+        """Provide a transactional scope around a series of operations.
+
+        Write transactions take the write lock up front with
+        ``BEGIN IMMEDIATE``.  With a deferred ``BEGIN``, any read that happens
+        before the first write - e.g. FTS5 loading its config table when a
+        statement on the virtual table is prepared - opens a read transaction
+        first, and SQLite then fails with ``database is locked`` immediately
+        instead of waiting for the busy timeout if another process holds the
+        write lock.
+        """
         conn = sqlite3.connect(self.db_path)
-        conn.execute("begin")
+        conn.execute("begin immediate" if write else "begin")
         try:
             yield conn
             conn.commit()
@@ -606,7 +618,7 @@ class CollectionSQLite(CollectionBase):
         names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
-        with self.conn() as conn:
+        with self.conn(write=True) as conn:
             conn.executemany(
                 """INSERT INTO documents
             (id, metadata, name, content) VALUES (?, ?, ?, ?)
@@ -707,7 +719,7 @@ class CollectionPostgreSQL(CollectionBase):
         )
 
     @contextmanager
-    def conn(self):
+    def conn(self, write: bool = False):
         """Provide a transactional scope around a series of operations."""
         conn = psycopg2.connect(dsn=self.dsn)
         try:
@@ -756,7 +768,7 @@ class CollectionPostgreSQL(CollectionBase):
         names: list[str | None],
     ) -> list[str]:
         """Add one or more documents to the collection."""
-        with self.conn() as conn:
+        with self.conn(write=True) as conn:
             if self.embedding_function:
                 vectors = self.embedding_function(contents)
                 embeddings = self._format_vectors(vectors)
