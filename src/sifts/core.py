@@ -198,7 +198,7 @@ class CollectionBase:
         use_fts: bool = True,
         query_embedding_function: Callable | None = None,
     ) -> None:
-        """Initialize collection given a name (cumpulsory).
+        """Initialize collection given a name (compulsory).
 
         ``embedding_function`` is used to embed documents. If
         ``query_embedding_function`` is given, it is used to embed query
