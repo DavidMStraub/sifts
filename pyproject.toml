@@ -4,27 +4,38 @@ description = "Simple full-text search library with SQL backend"
 authors = [
   { name = "David M. Straub", email = "straub@protonmail.com" },
 ]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
+  "Topic :: Text Processing :: Indexing",
+]
 dynamic = ["version"]
 dependencies = ["SQLAlchemy", "psycopg2-binary", "numpy"]
 
-[project.optional-dependencies]
+[project.urls]
+Homepage = "https://github.com/DavidMStraub/sifts"
+Repository = "https://github.com/DavidMStraub/sifts"
+
+[dependency-groups]
 testing = ["pytest", "pytest-docker"]
 
-[project.urls]
-homepage = "https://github.com/DavidMStraub/sifts"
-repository = "https://github.com/DavidMStraub/sifts"
-
 [build-system]
-requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=77", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
-
-[tool.isort]
-profile = "black"
 
 [tool.setuptools_scm]
 # NOTE: Using a version file avoids some overhead
 #
 # This file is explicitly ignored by version control.
-write_to = "src/sifts/_version.py"
+version_file = "src/sifts/_version.py"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.mypy]
+strict = true
