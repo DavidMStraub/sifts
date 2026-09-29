@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+import threading
 
 import numpy as np
 import pytest
@@ -684,3 +685,58 @@ def test_query_multiple_special_chars(tmp_path):
     assert res["total"] == 1
     assert "(test)" in res["results"][0]["content"]
     assert "{data}" in res["results"][0]["content"]
+
+
+@pytest.mark.parametrize("operation", ["delete", "delete_all"])
+def test_write_waits_for_concurrent_writer(tmp_path, operation):
+    """A write must wait for another process's write lock, not fail at once.
+
+    Regression test: ``delete`` and ``delete_all`` start with a statement on
+    the FTS5 virtual table.  Preparing it makes FTS5 read its ``*_config``
+    shadow table, which under a deferred ``BEGIN`` opens a read transaction
+    before the write lock is requested.  SQLite then refuses to invoke the
+    busy handler (deadlock avoidance) and raises ``database is locked``
+    immediately, even though the other writer only holds the lock briefly.
+    """
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem ipsum", "dolor sit"], ids=["a", "b"])
+
+    # Another process (e.g. a background reindex worker) holds the write
+    # lock for a moment while we write.
+    other = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    other.execute("BEGIN IMMEDIATE")
+    other.execute("UPDATE documents SET metadata = NULL WHERE id = 'b'")
+    release = threading.Timer(0.3, other.commit)
+    release.start()
+    try:
+        if operation == "delete":
+            search.delete(["a"])
+            assert [r["id"] for r in search.get()["results"]] == ["b"]
+        else:
+            search.delete_all()
+            assert search.get()["total"] == 0
+    finally:
+        release.join()
+        other.close()
+
+
+def test_embeddings_computed_outside_write_transaction(tmp_path):
+    """Embedding functions can be slow (model inference, remote API calls);
+    running them while holding the database write lock blocks every other
+    writer for that long, so they must run before the transaction begins."""
+    path = tmp_path / "search_engine.db"
+
+    def embed(contents):
+        # Fails with "database is locked" if add() already holds the write lock.
+        probe = sqlite3.connect(path, timeout=0, isolation_level=None)
+        try:
+            probe.execute("BEGIN IMMEDIATE")
+            probe.rollback()
+        finally:
+            probe.close()
+        return [np.ones(4) for _ in contents]
+
+    search = CollectionSQLite(path, name="123", embedding_function=embed)
+    search.add(["Lorem ipsum", "dolor sit"], ids=["a", "b"])
+    assert search.query("Lorem ipsum", vector_search=True)["total"] == 2
