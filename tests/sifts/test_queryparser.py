@@ -126,9 +126,9 @@ def test_wildcard_end_only_postgres():
 
 
 def test_wildcard_middle_only_sqlite():
-    # Mid-word wildcards are not supported by SQLite FTS5, left as-is
+    # Mid-word wildcards are not supported by SQLite FTS5, quoted as a phrase
     query = "test*word"
-    assert str(QueryParser(query)) == "test*word"
+    assert str(QueryParser(query)) == '"test*word"'
 
 
 def test_wildcard_middle_only_postgres():
