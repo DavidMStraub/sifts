@@ -606,3 +606,52 @@ def test_query_parentheses_special_char(postgres_service, search_engine):
     assert res["total"] == 1
     # Verify the document with parentheses was matched
     assert "test (example)" in res["results"][0]["content"]
+
+
+def test_vector_query_embedding_function(postgres_service, search_engine):
+    doc_vectors = {"Lorem ipsum dolor": [1, 1, 1], "sit amet": [1, -1, 1]}
+    query_vectors = {"consectetur": [-1, -1, 1]}
+
+    def f_docs(documents):
+        return [doc_vectors[doc] for doc in documents]
+
+    def f_query(queries):
+        return [query_vectors[q] for q in queries]
+
+    search = CollectionPostgreSQL(
+        dsn=TEST_DB_DSN,
+        name="vector",
+        embedding_function=f_docs,
+        query_embedding_function=f_query,
+    )
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+
+
+def test_vector_add_precomputed_embeddings(postgres_service, search_engine):
+    def f(documents):
+        vectors = {"consectetur": [-1, -1, 1]}
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionPostgreSQL(dsn=TEST_DB_DSN, name="vector", embedding_function=f)
+    ids = search.add(
+        ["Lorem ipsum dolor", "sit amet"],
+        embeddings=[[1, 1, 1], [1, -1, 1]],
+    )
+    res = search.query("consectetur", vector_search=True)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    # update with precomputed embeddings: switch order
+    search.update(
+        ids=ids,
+        contents=["Lorem ipsum dolor", "sit amet"],
+        embeddings=[[1, -1, 1], [1, 1, 1]],
+    )
+    res = search.query("consectetur", vector_search=True)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)

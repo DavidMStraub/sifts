@@ -168,6 +168,23 @@ collection.add(["This is a test sentence.", "Another example query."])
 results = collection.query("Find similar sentences.", vector_search=True)
 ```
 
+Some embedding models expect queries and documents to be embedded differently (e.g. with different prefixes). In this case, pass a separate `query_embedding_function`, which is used for query strings, while `embedding_function` is used for documents:
+
+```python
+collection = sifts.Collection(
+    db_url="sqlite:///vector_store.db",
+    name="my_vector_store",
+    embedding_function=model.encode_document,
+    query_embedding_function=model.encode_query,
+)
+```
+
+If you have already computed the document vectors, you can pass them to `add` or `update` with the `embeddings` argument instead of having them computed by `embedding_function`:
+
+```python
+collection.add(["This is a test sentence."], embeddings=[vector])
+```
+
 PostgreSQL collections require installing and enabling the `pgvector` extension.
 
 
