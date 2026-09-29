@@ -5,7 +5,7 @@ import json
 import re
 import sqlite3
 import uuid
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, Sequence, TypedDict
 
 import numpy as np
 import psycopg2
@@ -196,14 +196,23 @@ class CollectionBase:
         name: str,
         embedding_function: Callable | None = None,
         use_fts: bool = True,
+        query_embedding_function: Callable | None = None,
     ) -> None:
-        """Initialize collection given a name (cumpulsory)."""
+        """Initialize collection given a name (compulsory).
+
+        ``embedding_function`` is used to embed documents. If
+        ``query_embedding_function`` is given, it is used to embed query
+        strings instead (e.g. for models that use different prefixes for
+        queries and documents); otherwise ``embedding_function`` is used
+        for both.
+        """
         if not name:
             raise ValueError("Collection name is required!")
         if not re.fullmatch(r"[-a-zA-Z0-9_\\+~#=/]+", name):
             raise ValueError("Invalid collection name!")
         self.name = name
         self.embedding_function = embedding_function
+        self.query_embedding_function = query_embedding_function
         self.use_fts = use_fts
         self.create_tables()
 
@@ -252,8 +261,18 @@ class CollectionBase:
         contents: list[str],
         ids: list[str | None] | None = None,
         metadatas: list[dict[str, str] | None] | None = None,
+        embeddings: Sequence | None = None,
     ) -> list[str]:
-        """Add one or more documents to the collection."""
+        """Add one or more documents to the collection.
+
+        ``embeddings`` can be used to pass precomputed vectors, one per
+        document, instead of computing them with ``embedding_function``.
+        """
+        if embeddings is not None:
+            if not self.embedding_function:
+                raise ValueError("embeddings not supported without embedding_function.")
+            if len(embeddings) != len(contents):
+                raise ValueError("embeddings and contents must have the same length.")
         if ids is None:
             ids = [make_id() for _ in contents]
         else:
@@ -263,7 +282,14 @@ class CollectionBase:
         else:
             metadatas = [json.dumps(m) if m else None for m in metadatas]
         names = [self.name for _ in contents]
-        ids = self._add(contents, ids, metadatas, names)
+        # compute embeddings before opening the transaction: this can be slow
+        # (model inference, remote API) and must not block other writers
+        formatted_embeddings = None
+        if self.embedding_function:
+            if embeddings is None:
+                embeddings = self.embedding_function(contents)
+            formatted_embeddings = self._format_vectors(embeddings)
+        ids = self._add(contents, ids, metadatas, names, formatted_embeddings)
         return ids
 
     def _add(
@@ -272,8 +298,13 @@ class CollectionBase:
         ids: list[str | None],
         metadatas: list[str | None],
         names: list[str | None],
+        embeddings: list | None = None,
     ) -> list[str]:
-        """Add one or more documents to the collection."""
+        """Add one or more documents to the collection.
+
+        ``embeddings`` are the formatted vectors, or None if the
+        collection has no embedding function.
+        """
         raise NotImplementedError
 
     def _format_vectors(self, vectors):
@@ -285,11 +316,14 @@ class CollectionBase:
         ids: list[str],
         contents: list[str],
         metadatas: list[dict[str, str] | None] | None = None,
+        embeddings: Sequence | None = None,
     ) -> list[str]:
         """Update one or more documents."""
         if ids is None or any([i is None for i in ids]):
             raise ValueError("ids must be specified for update")
-        return self.add(contents=contents, ids=ids, metadatas=metadatas)
+        return self.add(
+            contents=contents, ids=ids, metadatas=metadatas, embeddings=embeddings
+        )
 
     def delete(self, ids: list[str]) -> None:
         """Delete one or more documents."""
@@ -318,7 +352,10 @@ class CollectionBase:
                 params = []
                 if query_string:
                     if vector_search:
-                        vector = self.embedding_function([query_string])[0]
+                        embed = (
+                            self.query_embedding_function or self.embedding_function
+                        )
+                        vector = embed([query_string])[0]
                         fts_query = self.QUERY_VECTOR_SEARCH
                         if self.IS_POSTGRES:
                             vector = self._format_vectors([vector])[0]
@@ -547,10 +584,14 @@ class CollectionSQLite(CollectionBase):
         name: str | None = None,
         embedding_function: Callable | None = None,
         use_fts: bool = True,
+        query_embedding_function: Callable | None = None,
     ) -> None:
         self.db_path = db_path
         super().__init__(
-            name=name, embedding_function=embedding_function, use_fts=use_fts
+            name=name,
+            embedding_function=embedding_function,
+            use_fts=use_fts,
+            query_embedding_function=query_embedding_function,
         )
 
     @contextmanager
@@ -606,13 +647,9 @@ class CollectionSQLite(CollectionBase):
         ids: list[str | None],
         metadatas: list[str | None],
         names: list[str | None],
+        embeddings: list | None = None,
     ) -> list[str]:
         """Add one or more documents to the collection."""
-        # compute embeddings before taking the write lock: this can be slow
-        # (model inference, remote API) and must not block other writers
-        if self.embedding_function:
-            vectors = self.embedding_function(contents)
-            embeddings = self._format_vectors(vectors)
         with self.conn(write=True) as conn:
             conn.executemany(
                 """INSERT INTO documents
@@ -638,7 +675,7 @@ class CollectionSQLite(CollectionBase):
                 conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
 
             # add/update embeddings
-            if self.embedding_function:
+            if embeddings is not None:
                 conn.executemany(
                     f"UPDATE documents SET embedding = {self.PLACEHOLDER} WHERE id = {self.PLACEHOLDER}",
                     list(zip(embeddings, ids)),
@@ -705,10 +742,14 @@ class CollectionPostgreSQL(CollectionBase):
         name: str | None = None,
         embedding_function: Callable | None = None,
         use_fts: bool = True,
+        query_embedding_function: Callable | None = None,
     ) -> None:
         self.dsn = dsn
         super().__init__(
-            name=name, embedding_function=embedding_function, use_fts=use_fts
+            name=name,
+            embedding_function=embedding_function,
+            use_fts=use_fts,
+            query_embedding_function=query_embedding_function,
         )
 
     @contextmanager
@@ -759,12 +800,11 @@ class CollectionPostgreSQL(CollectionBase):
         ids: list[str | None],
         metadatas: list[str | None],
         names: list[str | None],
+        embeddings: list | None = None,
     ) -> list[str]:
         """Add one or more documents to the collection."""
         with self.conn(write=True) as conn:
-            if self.embedding_function:
-                vectors = self.embedding_function(contents)
-                embeddings = self._format_vectors(vectors)
+            if embeddings is not None:
                 if self.use_fts:
                     psycopg2.extras.execute_values(
                         conn,
@@ -838,11 +878,15 @@ def Collection(
     name: str,
     embedding_function: Callable | None = None,
     use_fts: bool = True,
+    query_embedding_function: Callable | None = None,
 ) -> CollectionBase:
     """Constructor for search engine instance."""
     if not db_url:
         return CollectionSQLite(
-            name=name, embedding_function=embedding_function, use_fts=use_fts
+            name=name,
+            embedding_function=embedding_function,
+            use_fts=use_fts,
+            query_embedding_function=query_embedding_function,
         )
     if db_url.startswith("sqlite:///"):
         return CollectionSQLite(
@@ -850,10 +894,12 @@ def Collection(
             name=name,
             embedding_function=embedding_function,
             use_fts=use_fts,
+            query_embedding_function=query_embedding_function,
         )
     return CollectionPostgreSQL(
         dsn=db_url_to_dsn(db_url),
         name=name,
         embedding_function=embedding_function,
         use_fts=use_fts,
+        query_embedding_function=query_embedding_function,
     )
