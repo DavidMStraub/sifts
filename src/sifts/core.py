@@ -67,8 +67,10 @@ class QueryParser:
 
         # Process each token
         processed_tokens = []
-        # FTS5 special characters that require quoting: ()[]{}:,"
-        special_chars_pattern = r'[(){}\[\]:,"]'
+        # FTS5 barewords may only contain ASCII alphanumerics, underscores,
+        # the substitute character and non-ASCII characters; any other
+        # character (e.g. / \ . @ - +) is a syntax error unless quoted
+        bareword_pattern = r"[A-Za-z0-9_\x1a\u0080-\U0010ffff]+"
 
         for token in tokens:
             # Handle already-quoted strings
@@ -89,19 +91,7 @@ class QueryParser:
                 trailing_wildcard = "*"
                 token = token[:-1]
 
-            # Check if token needs quoting
-            # Quote if it contains:
-            # 1. FTS5 special characters: ()[]{}:,"
-            # 2. Hyphens or apostrophes within word (e.g., test-word, it's)
-            needs_quoting = False
-
-            if re.search(special_chars_pattern, token):
-                needs_quoting = True
-            elif re.match(r"\w+(?:[-\']\w+)+", token):
-                # Words with hyphens or apostrophes (e.g., test-word, it's)
-                needs_quoting = True
-
-            if needs_quoting:
+            if not re.fullmatch(bareword_pattern, token):
                 # Escape any existing quotes
                 escaped_token = token.replace('"', '""')
                 processed_tokens.append(f'"{escaped_token}"{trailing_wildcard}')

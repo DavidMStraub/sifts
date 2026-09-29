@@ -687,6 +687,36 @@ def test_query_multiple_special_chars(tmp_path):
     assert "{data}" in res["results"][0]["content"]
 
 
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("Lübbenau/Spreewald", 1),
+        ("Lübbenau/Spree*", 1),
+        ("C:\\Users\\test", 1),
+        ("1.2.1900", 1),
+        ("mail@example.org", 1),
+        ("-foo", 1),
+        ("+foo", 1),
+        ("foo.", 1),
+        ("/", 0),
+    ],
+)
+def test_query_non_bareword_chars(tmp_path, query, expected):
+    """Any ASCII punctuation outside an FTS5 bareword must not cause a syntax error."""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(
+        [
+            "Lübbenau/Spreewald",
+            "C:\\Users\\test",
+            "born 1.2.1900",
+            "mail@example.org",
+            "foo",
+        ]
+    )
+    assert search.query(query)["total"] == expected
+
+
 @pytest.mark.parametrize("operation", ["delete", "delete_all"])
 def test_write_waits_for_concurrent_writer(tmp_path, operation):
     """A write must wait for another process's write lock, not fail at once.
