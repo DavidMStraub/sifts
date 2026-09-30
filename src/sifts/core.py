@@ -551,6 +551,9 @@ class CollectionSQLite(CollectionBase):
 
     QUERY_INSERT_INDEX = "INSERT INTO documents_fts (content, id) VALUES (?, ?)"
     QUERY_DELETE_INDEX = "DELETE FROM documents_fts WHERE id = (?)"
+    QUERY_DELETE_INDEX_MATCH = (
+        "DELETE FROM documents_fts WHERE documents_fts MATCH (?) AND id = (?)"
+    )
     QUERY_DELETE_DOC = "DELETE FROM documents WHERE id = (?)"
     QUERY_SEARCH = """SELECT count(*) OVER() AS full_count,
                 doc.id, fts.content, doc.metadata,
@@ -664,14 +667,7 @@ class CollectionSQLite(CollectionBase):
 
             # add/update full-text search index
             if self.use_fts:
-                conn.execute("CREATE TEMPORARY TABLE temp_ids (id INTEGER)")
-                conn.executemany(
-                    "INSERT INTO temp_ids (id) VALUES (?)", [(did,) for did in ids]
-                )
-                conn.execute(
-                    "DELETE FROM documents_fts WHERE id IN (SELECT id FROM temp_ids)"
-                )
-                conn.execute("DROP TABLE temp_ids")
+                self._delete_index(conn, ids)
                 conn.executemany(self.QUERY_INSERT_INDEX, list(zip(contents, ids)))
 
             # add/update embeddings
@@ -682,6 +678,44 @@ class CollectionSQLite(CollectionBase):
                 )
 
         return ids
+
+    def delete(self, ids: list[str]) -> None:
+        """Delete one or more documents."""
+        with self.conn(write=True) as conn:
+            if self.use_fts:
+                self._delete_index(conn, ids)
+            conn.executemany(self.QUERY_DELETE_DOC, [(did,) for did in ids])
+
+    def _delete_index(self, conn, ids: Sequence) -> None:
+        """Delete the full-text index entries of one or more documents.
+
+        FTS5 can only look up rows by rowid or through its full-text index, so
+        ``WHERE id = ?`` alone scans the whole index. Instead, match the ID as
+        a phrase in the ``id`` column, which uses the index, and compare it
+        exactly to skip other IDs with the same tokens (e.g. ``a-b`` and
+        ``a b``). An ID without ASCII letters or digits might not produce any
+        tokens and thus never match, and FTS5 rejects queries containing NUL,
+        so those fall back to the scan.
+        """
+        match_ids = [did for did in ids if self._can_match_id(did)]
+        scan_ids = [did for did in ids if not self._can_match_id(did)]
+        conn.executemany(
+            self.QUERY_DELETE_INDEX_MATCH,
+            [(self._id_phrase(did), did) for did in match_ids],
+        )
+        conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in scan_ids])
+
+    @staticmethod
+    def _can_match_id(did) -> bool:
+        """Whether the ID can be looked up with an FTS5 phrase query."""
+        did = str(did)
+        return "\x00" not in did and re.search(r"[A-Za-z0-9]", did) is not None
+
+    @staticmethod
+    def _id_phrase(did) -> str:
+        """Return an FTS5 query matching the ID as a phrase in the id column."""
+        escaped = str(did).replace('"', '""')
+        return f'id : "{escaped}"'
 
     def _order_result(self, result, vector, limit, offset):
         """Order the result by vector similarity."""
