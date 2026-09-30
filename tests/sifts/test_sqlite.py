@@ -861,6 +861,7 @@ def test_update_numeric_looking_ids(tmp_path):
     [
         ["a-b", "a b", "a_b", 'a"b'],
         ["---", "***", "Ünï", "ünï"],
+        ["a\x00b", "a\x00c", "\x00"],
         ["OR", "NEAR", "a*", "^a"],
     ],
 )

@@ -694,15 +694,22 @@ class CollectionSQLite(CollectionBase):
         a phrase in the ``id`` column, which uses the index, and compare it
         exactly to skip other IDs with the same tokens (e.g. ``a-b`` and
         ``a b``). An ID without ASCII letters or digits might not produce any
-        tokens and thus never match, so those fall back to the scan.
+        tokens and thus never match, and FTS5 rejects queries containing NUL,
+        so those fall back to the scan.
         """
-        match_ids = [did for did in ids if re.search(r"[A-Za-z0-9]", str(did))]
-        scan_ids = [did for did in ids if not re.search(r"[A-Za-z0-9]", str(did))]
+        match_ids = [did for did in ids if self._can_match_id(did)]
+        scan_ids = [did for did in ids if not self._can_match_id(did)]
         conn.executemany(
             self.QUERY_DELETE_INDEX_MATCH,
             [(self._id_phrase(did), did) for did in match_ids],
         )
         conn.executemany(self.QUERY_DELETE_INDEX, [(did,) for did in scan_ids])
+
+    @staticmethod
+    def _can_match_id(did) -> bool:
+        """Whether the ID can be looked up with an FTS5 phrase query."""
+        did = str(did)
+        return "\x00" not in did and re.search(r"[A-Za-z0-9]", did) is not None
 
     @staticmethod
     def _id_phrase(did) -> str:
