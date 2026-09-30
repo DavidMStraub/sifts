@@ -834,3 +834,46 @@ def test_precomputed_embeddings_without_embedding_function(tmp_path):
     search = CollectionSQLite(path, name="vector")
     with pytest.raises(ValueError):
         search.add(["Lorem ipsum dolor"], embeddings=[[1, 1, 1]])
+
+
+def _fts_ids(path):
+    conn = sqlite3.connect(path)
+    try:
+        return sorted(row[0] for row in conn.execute("SELECT id FROM documents_fts"))
+    finally:
+        conn.close()
+
+
+def test_update_numeric_looking_ids(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem", "ipsum", "dolor"], ids=["7", "007", "7.0"])
+    search.update(ids=["7"], contents=["sit"])
+    assert _fts_ids(path) == ["007", "7", "7.0"]
+    assert search.query("ipsum")["results"][0]["id"] == "007"
+    assert search.query("dolor")["results"][0]["id"] == "7.0"
+    assert search.query("sit")["results"][0]["id"] == "7"
+    assert search.query("Lorem")["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["a-b", "a b", "a_b", 'a"b'],
+        ["---", "***", "Ünï", "ünï"],
+        ["OR", "NEAR", "a*", "^a"],
+    ],
+)
+def test_update_delete_ids_special_chars(tmp_path, ids):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"] * len(ids), ids=ids)
+    for i, did in enumerate(ids):
+        search.update(ids=[did], contents=[f"ipsum{i}"])
+        assert _fts_ids(path) == sorted(ids)
+        assert search.query(f"ipsum{i}")["results"][0]["id"] == did
+    assert search.query("Lorem")["total"] == 0
+    for i, did in enumerate(ids):
+        search.delete([did])
+        assert _fts_ids(path) == sorted(ids[i + 1 :])
+        assert search.query(f"ipsum{i}")["total"] == 0
