@@ -568,12 +568,11 @@ class CollectionSQLite(CollectionBase):
                 WHERE TRUE
                 """
     QUERY_GET = """SELECT count(*) OVER() AS full_count,
-                doc.id, fts.content, doc.metadata
-                FROM documents_fts fts
-                JOIN documents doc ON doc.id = fts.id
+                doc.id, doc.content, doc.metadata
+                FROM documents doc
                 WHERE TRUE
                 """
-    QUERY_FILTER_META = "json_extract(doc.metadata, '$.{}') {} (?)"
+    QUERY_FILTER_META ="json_extract(doc.metadata, '$.{}') {} (?)"
     QUERY_FILTER_META_FLOAT = QUERY_FILTER_META
     QUERY_FILTER_META_IN = "json_extract(doc.metadata, '$.{}') IN ({})"
     QUERY_FILTER_META_NOT_IN = "json_extract(doc.metadata, '$.{}') NOT IN ({})"

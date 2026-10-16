@@ -387,6 +387,42 @@ def test_all_docs(tmp_path):
     assert res["total"] == 2
 
 
+@pytest.mark.parametrize("use_fts", [True, False])
+def test_get(tmp_path, use_fts):
+    path = tmp_path / "search_engine.db"
+
+    def f(documents):
+        return [[1, 0, 0] for _ in documents]
+
+    search = CollectionSQLite(
+        path, name="get", embedding_function=f, use_fts=use_fts
+    )
+    search.add(
+        ["Lorem ipsum dolor", "sit amet", "consectetur"],
+        ids=["a", "b", "c"],
+        metadatas=[{"k": "x", "n": 1}, {"k": "y", "n": 2}, {"k": "x", "n": 3}],
+    )
+    res = search.get(order_by="n")
+    assert res["total"] == 3
+    assert len(res["results"]) == search.count()
+    assert [r["id"] for r in res["results"]] == ["a", "b", "c"]
+    assert [r["content"] for r in res["results"]] == [
+        "Lorem ipsum dolor",
+        "sit amet",
+        "consectetur",
+    ]
+    assert res["results"][1]["metadata"] == {"k": "y", "n": 2}
+    assert search.query("") == search.get()
+    # where
+    res = search.get(where={"k": "x"}, order_by="-n")
+    assert res["total"] == 2
+    assert [r["id"] for r in res["results"]] == ["c", "a"]
+    # limit & offset
+    res = search.get(order_by="n", limit=1, offset=1)
+    assert res["total"] == 3
+    assert [r["id"] for r in res["results"]] == ["b"]
+
+
 def test_vector_add(tmp_path):
     path = tmp_path / "search_engine.db"
     vectors = {"Lorem ipsum dolor": [0, 0, 0], "sit amet": [0, 0.5, 0]}
